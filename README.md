@@ -2,7 +2,7 @@
 
 A home command center for iPad, modeled on Apple's HomeView. The main screen answers one question: **what's next for our family, and is the house okay?**
 
-It's a web app that runs on iPadOS, not a replacement operating system. There's no build step. You add it to the iPad's home screen and it runs full screen. Until Home Assistant and the Bauder HQ feed are connected, every widget shows sample data tagged **Sample**.
+It's a web app that runs on iPadOS, not a replacement operating system. There's no build step. You add it to the iPad's home screen and it runs full screen. Until Home Assistant is connected, the house widgets show sample data tagged **Sample**. Airbnb and EV projects read the feed shipped with this app. Inspections stay empty until that feed includes numbers.
 
 ## Features
 
@@ -80,7 +80,11 @@ The app talks to Home Assistant over its WebSocket API, so no CORS changes are n
 
 ## Bauder HQ feed
 
-The Airbnb, Inspections and EV Projects widgets read one JSON file. Put its address in **Settings → Connections → Bauder HQ feed**. When the app runs on Umbrel, drop the file at `data/bauder-hq.json` in the stack's volume and use `http://umbrel.local:8686/data/bauder-hq.json`.
+The Airbnb, Inspections and EV Projects widgets read one JSON file.
+
+When no feed address is saved, the app uses `feed/bauder-hq.json`. That file lives in this repo. The Umbrel image copies it outside the `data/` volume, so the Docker volume cannot hide it, and GitHub Pages serves it from the same path.
+
+To use a file on the Umbrel volume instead, put it at `data/bauder-hq.json` and set **Settings → Connections → Bauder HQ feed** to `http://umbrel.local:8686/data/bauder-hq.json`.
 
 ```json
 {
@@ -98,11 +102,36 @@ The Airbnb, Inspections and EV Projects widgets read one JSON file. Put its addr
 }
 ```
 
-- `type` is `check-in` or `check-out`. Dates are `YYYY-MM-DD`.
+- `type` is `check-in` or `check-out`. Dates are `YYYY-MM-DD`. `time` is optional. The widget still lists the stay when the time is blank.
+- Leave `inspections` out, or leave `completed` and `goal` empty, when there are no numbers yet. The widget then says there are no inspections yet. It does not keep the sample counts.
 - EV `stage` is optional (`good`, `warn` or `crit`). Without it, the status wording decides the color: "approved" or "complete" is green, "denied" or "on hold" is red, everything else is amber.
 - The feed refreshes every 5 minutes. If it can't be reached, the last good copy stays on screen.
 
-A full example is in `umbrel/bauder-hq.sample.json`.
+The file the app loads by default is `feed/bauder-hq.json`. A fuller example with sample numbers is in `umbrel/bauder-hq.sample.json`.
+
+## Household info
+
+`household.json` at the root of this repo pre-fills the iPad. Nginx and GitHub Pages both serve it. On a new iPad, where nothing is saved yet, the app uses that file for:
+
+- place, latitude and longitude
+- people (name, color, and the private flag), always keeping the fixed Guest
+- the feed address
+- emergency info: address, directions, gas, water, power, extinguishers, meeting spot, medical notes, other notes, and contacts
+
+Merge rules:
+
+- Anything already saved on the iPad wins.
+- A blank string or an empty list in `household.json` does not erase a value.
+- Fields the file leaves out keep the app's built-in defaults. 911 and Poison Control stay in the contact list.
+- The Home Assistant address, token, and PIN are never read from the file.
+
+After you change `household.json` or the feed in git:
+
+1. On the Umbrel, open the stack in Portainer and choose **Pull and redeploy**.
+2. Open Bauder Home on the iPad so it picks up the new files.
+3. If this iPad already had settings saved, open **Settings → Connections** and tap **Re-apply household info**, then tap again to confirm. That copies the non-blank fields from `household.json`, including the feed address. It does not change the Home Assistant token or the PIN. If you use a file in the Umbrel data folder, set that feed address again after re-applying.
+
+A first launch with empty browser storage applies the file on its own. Re-apply is for an iPad that already saved a copy. The coordinates in the file are for 8918 E Dalton Ave, Spokane, WA 99212, from the U.S. Census Bureau geocoder.
 
 ## Set up the iPad
 
@@ -118,8 +147,11 @@ A full example is in `umbrel/bauder-hq.sample.json`.
 | `index.html` | Page shell |
 | `styles.css` | All styling. Colors and fonts are tokens at the top, with light and dark sets. |
 | `app.js` | Everything else: Home Assistant, widgets, apps, modes, assistant, clock faces |
+| `household.js` | Merges `household.json` into settings and emergency info |
+| `household.json` | Household seed: place, people, feed address, emergency info |
+| `feed/bauder-hq.json` | Default Bauder HQ feed |
 | `sw.js` | Offline support. Bump `CACHE` after changing files. |
 | `manifest.webmanifest`, `icons/` | Home-screen install |
 | `docker-compose.yml`, `umbrel/` | Self-hosting on Umbrel |
 
-Settings, lists, recipes, notes, packages and emergency info are saved in the iPad's browser storage, and photos in its IndexedDB, unless you chose Home Assistant lists. Nothing is stored in this repo or sent anywhere except the Home Assistant, weather (Open-Meteo) and feed addresses you set.
+Settings, lists, recipes, notes, packages and emergency info are saved in the iPad's browser storage, and photos in its IndexedDB, unless you chose Home Assistant lists. `household.json` and `feed/bauder-hq.json` in this repo are the household seed and the default feed. The Home Assistant token and PIN are not stored here. Nothing is sent anywhere except the Home Assistant, weather (Open-Meteo) and feed addresses you set.

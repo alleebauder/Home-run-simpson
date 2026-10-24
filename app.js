@@ -1,11 +1,12 @@
 /* Bauder Home: app.js
    A home command center for iPad. Plain JavaScript, no build step.
-   The iPad keeps everything locally (localStorage for settings, lists, notes,
-   recipes, packages and emergency info; IndexedDB for photos). Nothing leaves
-   the iPad except calls to the Home Assistant, weather and feed addresses you
-   set. When Home Assistant to-do lists are chosen in Settings, tasks and the
-   message board live there instead, so phones with the Home Assistant app
-   share them. */
+   The iPad keeps settings, lists, notes, recipes, packages and emergency info
+   in localStorage, and photos in IndexedDB. household.json can fill blank
+   household fields; anything already saved on the iPad wins until you re-apply
+   it. Nothing leaves the iPad except calls to the Home Assistant, weather and
+   feed addresses you set. When Home Assistant to-do lists are chosen in
+   Settings, tasks and the message board live there instead, so phones with
+   the Home Assistant app share them. */
 (() => {
   'use strict';
 
@@ -184,22 +185,38 @@
     speak: true,
   };
 
-  function loadSettings() {
-    const saved = store.get('settings', {}) || {};
-    if (saved.profiles && !saved.people) {
-      saved.people = saved.profiles.map((p, i) => ({ id: p.id, name: p.name, showPrivate: !!p.showPrivate, fixed: !!p.fixed, shared: /^family$/i.test(p.name), color: p.fixed ? '#9aa6a1' : PALETTE[i % PALETTE.length][0] }));
-      delete saved.profiles;
+  function readSavedSettings() {
+    const saved = store.get('settings', null);
+    if (!saved || typeof saved !== 'object') return null;
+    const copy = clone(saved);
+    if (copy.profiles && !copy.people) {
+      copy.people = copy.profiles.map((p, i) => ({ id: p.id, name: p.name, showPrivate: !!p.showPrivate, fixed: !!p.fixed, shared: /^family$/i.test(p.name), color: p.fixed ? '#9aa6a1' : PALETTE[i % PALETTE.length][0] }));
+      delete copy.profiles;
     }
-    const s = clone(DEFAULTS);
-    Object.keys(saved).forEach((k) => {
-      const dv = DEFAULTS[k], sv = saved[k];
-      if (dv && typeof dv === 'object' && !Array.isArray(dv) && sv && typeof sv === 'object' && !Array.isArray(sv)) s[k] = { ...dv, ...sv };
-      else s[k] = sv;
-    });
-    Object.keys(DEFAULT_MODES).forEach((id) => { s.modes[id] = { ...DEFAULT_MODES[id], ...((saved.modes || {})[id] || {}) }; });
+    return copy;
+  }
+  function repairSettings(s) {
+    s.modes = s.modes && typeof s.modes === 'object' ? s.modes : {};
+    Object.keys(DEFAULT_MODES).forEach((id) => { s.modes[id] = { ...DEFAULT_MODES[id], ...(s.modes[id] || {}) }; });
+    s.layout = s.layout && typeof s.layout === 'object' ? s.layout : {};
     ['main', 'guest'].forEach((k) => { s.layout[k] = Array.isArray(s.layout[k]) ? s.layout[k].filter((w) => WIDGET_INFO[w]) : clone(DEFAULT_LAYOUT[k]); });
-    if (!s.people.some((p) => p.fixed)) s.people.push(clone(DEFAULTS.people[2]));
+    if (!Array.isArray(s.people)) s.people = [];
+    if (!s.people.some((p) => p.fixed)) s.people.push({ id: 'guest', name: 'Guest', color: '#9aa6a1', showPrivate: false, fixed: true });
     return s;
+  }
+  // household.js merges household.json. Saved values win until Re-apply. A blank feed address uses the repo feed.
+  let bootEmergency = null;
+  function loadSettings() {
+    const boot = BauderHousehold.applyHousehold({
+      defaults: DEFAULTS,
+      defaultEmergency: defaultEmergency(),
+      savedSettings: readSavedSettings(),
+      savedEmergency: store.get('emergency', null),
+      seed: null,
+      mode: 'fill',
+    });
+    bootEmergency = boot.emergency;
+    return repairSettings(boot.settings);
   }
   const S = loadSettings();
   const saveSettings = () => store.set('settings', S);
@@ -402,7 +419,7 @@
   const saveLists = () => store.set('lists', LISTS);
   let PKGS = store.get('packages', null) || samplePackages();
   const savePkgs = () => store.set('packages', PKGS);
-  const EMERG = Object.assign(defaultEmergency(), store.get('emergency', {}));
+  const EMERG = bootEmergency || defaultEmergency();
   const saveEmerg = () => store.set('emergency', EMERG);
   const MEALS = store.get('meals', null) || { [isoDay(0)]: { recipe: 'sample-cornbread', text: 'Chili' }, _sample: true };
   const saveMeals = () => store.set('meals', MEALS);
@@ -809,7 +826,10 @@
   }
 
   // ============================================================ Bauder HQ
-  const FEED = { data: sampleFeed(), sample: true, note: '', updated: 0 };
+  // A configured feed must not flash sample inspection numbers while the file loads.
+  const FEED = S.feedUrl
+    ? { data: { airbnb: [], inspections: {}, ev: [] }, sample: false, note: '', updated: 0 }
+    : { data: sampleFeed(), sample: true, note: '', updated: 0 };
   function normalizeFeed(j) {
     return {
       airbnb: Array.isArray(j.airbnb) ? j.airbnb : [],
@@ -834,7 +854,7 @@
     scheduleRender();
     if (APP.name === 'settings') { const el = $('#feed-status'); if (el) el.textContent = feedStatusText(); }
   }
-  const feedStatusText = () => FEED.note || (FEED.sample ? 'No feed set. Widgets show sample data.' : `Updated ${fmtClock(new Date(FEED.updated))}.`);
+  const feedStatusText = () => FEED.note || (FEED.sample ? 'No feed set. Widgets show sample data.' : FEED.updated ? `Updated ${fmtClock(new Date(FEED.updated))}.` : 'Loading the feed…');
   function evStage(item) {
     if (item.stage) return item.stage;
     const s = String(item.status || '');
@@ -1623,16 +1643,20 @@
   }
 
   function wInsp() {
-    const i = FEED.data.inspections || {};
-    const done = +i.completed || 0, goal = +i.goal || 0;
-    const pct = goal ? clamp(done / goal, 0, 1) : 0;
+    const model = BauderHousehold.inspectionModel(FEED.data && FEED.data.inspections);
+    const head = whead('clip', 'Inspections', sampleTag(FEED.sample));
+    if (model.empty) {
+      return `<section class="${wcls('insp')}" aria-label="Inspections">${head}<div class="muted">No inspections in the feed yet.</div></section>`;
+    }
+    const done = model.done, goal = model.goal, pct = model.pct;
     const C = 2 * Math.PI * 40;
     const now = new Date();
     const weeks = Math.max(1, Math.ceil((new Date(now.getFullYear(), 11, 31) - now) / (7 * 86400000)));
     const left = Math.max(0, goal - done);
-    return `<section class="${wcls('insp')}" aria-label="Inspections">${whead('clip', 'Inspections', sampleTag(FEED.sample))}
+    const pace = goal && left ? `${Math.ceil(left / weeks)} a week to finish` : goal && !left ? 'Goal met' : '';
+    return `<section class="${wcls('insp')}" aria-label="Inspections">${head}
       <div class="ring-wrap"><svg class="ring" viewBox="0 0 100 100" role="img" aria-label="${Math.round(pct * 100)} percent of goal"><circle class="track" cx="50" cy="50" r="40"/><circle class="val" cx="50" cy="50" r="40" stroke-dasharray="${(pct * C).toFixed(1)} ${C.toFixed(1)}"/><text x="50" y="57" text-anchor="middle">${Math.round(pct * 100)}%</text></svg>
-      <div style="min-width:0"><div class="big num">${done}</div><div class="muted" style="font-size:13px">of ${goal} this year</div><div class="faint" style="font-size:12.5px">${left ? `${Math.ceil(left / weeks)} a week to finish` : 'Goal met'}</div></div></div></section>`;
+      <div style="min-width:0"><div class="big num">${done}</div><div class="muted" style="font-size:13px">of ${goal} this year</div>${pace ? `<div class="faint" style="font-size:12.5px">${pace}</div>` : ''}</div></div></section>`;
   }
 
   function wEv() {
@@ -2055,10 +2079,13 @@
       ${weathers.length ? `<label class="field"><span>Source</span>${sel('weatherEntity', [['', 'Open-Meteo (free, no account)'], ...weathers.map((w) => [w, 'Home Assistant · ' + entityName(w)])], S.weatherEntity)}</label>` : ''}
       <div class="row2"><label class="field"><span>Place name</span><input type="text" id="s-place" data-set="place" value="${esc(S.place)}"></label><label class="field"><span>Latitude</span><input type="number" id="s-lat" step="0.0001" data-set="lat" value="${esc(S.lat)}"></label><label class="field"><span>Longitude</span><input type="number" id="s-lon" step="0.0001" data-set="lon" value="${esc(S.lon)}"></label></div>
       <div class="section-title">Bauder HQ feed</div>
-      <label class="field"><span>Feed address (JSON)</span><input type="url" id="feed-url" value="${esc(S.feedUrl)}" placeholder="http://umbrel.local:8686/data/bauder-hq.json" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <label class="field"><span>Feed address (JSON)</span><input type="text" id="feed-url" value="${esc(S.feedUrl)}" placeholder="feed/bauder-hq.json" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
       <div class="quick"><button type="button" class="qbtn primary" data-act="feed-save">Save and refresh</button></div>
       <p class="help" id="feed-status">${esc(feedStatusText())}</p>
-      <p class="help">Drives the Airbnb, Inspections and EV Projects widgets. The README shows the format. Refreshes every 5 minutes.</p>`;
+      <p class="help">Drives the Airbnb, Inspections and EV Projects widgets. Leave this as <code>feed/bauder-hq.json</code> to use the feed shipped with the app. A file in the Umbrel data folder still works: <code>http://umbrel.local:8686/data/bauder-hq.json</code>. Refreshes every 5 minutes. The README shows the format.</p>
+      <div class="section-title">Household info</div>
+      <p class="help">Names, the home address, shutoff notes and the feed address can load from <code>household.json</code> shipped with this app. Anything already saved on this iPad stays until you re-apply. Blank fields in that file are skipped. Re-apply sets the feed address from that file. If you use the Umbrel data folder, put that address back afterward. The Home Assistant token and PIN are never changed.</p>
+      <div class="quick"><button type="button" class="qbtn" data-act="seed-reapply">${APP.confirm === 'seed' ? 'Tap again to re-apply' : 'Re-apply household info'}</button></div>`;
   }
 
   function setScreen() {
@@ -2572,7 +2599,22 @@
       haConnect();
     },
     'ha-disconnect': () => { S.haUrl = ''; S.haToken = ''; saveSettings(); haConnect(); renderApp(); toast('Disconnected. Showing sample devices.'); },
-    'feed-save': () => { S.feedUrl = ($('#feed-url')?.value || '').trim(); saveSettings(); loadFeed(); toast(S.feedUrl ? 'Refreshing the feed…' : 'Feed removed. Showing sample data.'); },
+    'feed-save': () => {
+      S.feedUrl = ($('#feed-url')?.value || '').trim();
+      if (!S.feedUrl) S.feedUrl = BauderHousehold.DEFAULT_FEED_URL;
+      const input = $('#feed-url');
+      if (input) input.value = S.feedUrl;
+      saveSettings();
+      loadFeed();
+      toast('Refreshing the feed…');
+    },
+    'seed-reapply': async () => {
+      if (APP.confirm !== 'seed') { APP.confirm = 'seed'; renderApp(); return; }
+      APP.confirm = null;
+      const ok = await pullHousehold('reapply');
+      if (APP.name === 'settings' || APP.name === 'emergency') renderApp();
+      toast(ok ? 'Household info updated from this app.' : 'Couldn’t load household info.');
+    },
     reset: () => {
       if (APP.confirm !== 'reset') { APP.confirm = 'reset'; renderApp(); return; }
       store.clear();
@@ -2697,13 +2739,55 @@
     loadFeed();
   });
 
+  async function fetchHouseholdSeed() {
+    try {
+      const r = await fetch('household.json', { cache: 'no-store' });
+      if (!r.ok) return null;
+      const data = await r.json();
+      return data && typeof data === 'object' && !Array.isArray(data) ? data : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function adoptHousehold(next, persist) {
+    const feedBefore = S.feedUrl, placeBefore = S.place, latBefore = S.lat, lonBefore = S.lon;
+    Object.keys(next.settings).forEach((k) => { S[k] = next.settings[k]; });
+    repairSettings(S);
+    const em = next.emergency || {};
+    Object.keys(EMERG).forEach((k) => { if (!Object.prototype.hasOwnProperty.call(em, k)) delete EMERG[k]; });
+    Object.assign(EMERG, em);
+    if (!personById(S.profile)) S.profile = (members()[0] || S.people[0]).id;
+    if (persist) { saveSettings(); saveEmerg(); }
+    return { feedChanged: feedBefore !== S.feedUrl, placeChanged: placeBefore !== S.place || latBefore !== S.lat || lonBefore !== S.lon };
+  }
+  async function pullHousehold(mode) {
+    const seed = await fetchHouseholdSeed();
+    if (!seed) return false;
+    const reapply = mode === 'reapply';
+    const next = BauderHousehold.applyHousehold({
+      defaults: DEFAULTS,
+      defaultEmergency: defaultEmergency(),
+      savedSettings: reapply ? clone(S) : readSavedSettings(),
+      savedEmergency: reapply ? clone(EMERG) : store.get('emergency', null),
+      seed,
+      mode: reapply ? 'reapply' : 'fill',
+    });
+    const diff = adoptHousehold(next, true);
+    if (diff.feedChanged || reapply) loadFeed();
+    if (diff.placeChanged) loadWeather();
+    renderAll();
+    if (APP.name === 'settings' || APP.name === 'emergency') renderApp();
+    return true;
+  }
+
   // ================================================================== init
-  function init() {
+  async function init() {
     applyTheme();
     useDemo();
     CAL.events = demoEvents();
     const wc = store.get('wxCache', null);
     if (wc) { WX.now = wc.now; WX.daily = (wc.daily || []).map((d) => ({ ...d, date: new Date(d.date) })); WX.place = wc.place; }
+    await Promise.race([pullHousehold('fill'), new Promise((resolve) => setTimeout(resolve, 2500))]);
     loadPowerHistory(powerEntity());
     renderAll();
     sizeGrid();

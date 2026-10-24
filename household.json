@@ -1,0 +1,26 @@
+{
+  "place": "Spokane Valley",
+  "lat": 47.686856,
+  "lon": -117.2851,
+  "feedUrl": "feed/bauder-hq.json",
+  "people": [
+    { "id": "p1", "name": "Lee", "color": "#f2a541", "showPrivate": true },
+    { "id": "p-eleanor", "name": "Eleanor", "color": "#64b5ff", "showPrivate": true },
+    { "id": "p-everett", "name": "Everett", "color": "#b48cff", "showPrivate": true },
+    { "id": "p-elijha", "name": "Elijha", "color": "#4fd1c5", "showPrivate": true },
+    { "id": "p2", "name": "Family", "color": "#32d74b", "showPrivate": true, "shared": true },
+    { "id": "guest", "name": "Guest", "color": "#9aa6a1", "showPrivate": false, "fixed": true }
+  ],
+  "emergency": {
+    "address": "8918 E Dalton Ave, Spokane, WA 99212",
+    "directions": "",
+    "gas": "Outside",
+    "water": "Behind the dryer, downstairs",
+    "power": "",
+    "extinguishers": "",
+    "meeting": "",
+    "medical": "",
+    "notes": "",
+    "contacts": []
+  }
+}

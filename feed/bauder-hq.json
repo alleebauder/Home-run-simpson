@@ -1,0 +1,11 @@
+{
+  "airbnb": [
+    { "listing": "Wall St", "type": "check-in", "date": "2026-10-24" },
+    { "listing": "Wall St", "type": "check-in", "date": "2026-10-25" },
+    { "listing": "Wall St", "type": "check-out", "date": "2026-11-01" }
+  ],
+  "ev": [
+    { "site": "Benton City", "status": "Lease draft pending from counsel", "stage": "warn" },
+    { "site": "Connell", "status": "Replacement site in WSDOT review", "stage": "warn" }
+  ]
+}

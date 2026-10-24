@@ -11,7 +11,7 @@ services:
     ports:
       - "8686:80"
     volumes:
-      # Put bauder-hq.json here to feed the Airbnb, Inspections and EV widgets.
+      # Optional. A file here is served at /data/ and does not replace feed/bauder-hq.json.
       - bauder-home-data:/usr/share/nginx/html/data
     restart: unless-stopped
 
