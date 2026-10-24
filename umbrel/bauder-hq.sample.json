@@ -1,0 +1,18 @@
+{
+  "airbnb": [
+    { "listing": "Wall St", "type": "check-in", "date": "2026-10-25", "time": "4:00 PM" },
+    { "listing": "Broadway", "type": "check-out", "date": "2026-10-26", "time": "11:00 AM" }
+  ],
+  "inspections": {
+    "completed": 186,
+    "goal": 300,
+    "scheduled": [
+      { "date": "2026-10-26", "time": "9:30 AM", "name": "Annual inspection" }
+    ]
+  },
+  "ev": [
+    { "site": "Site A", "status": "Permit approved" },
+    { "site": "Site B", "status": "In plan review" },
+    { "site": "Site C", "status": "Utility design", "stage": "warn" }
+  ]
+}

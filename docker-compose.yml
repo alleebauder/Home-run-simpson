@@ -1,0 +1,19 @@
+# Bauder Home on Umbrel.
+# Deploy with Portainer from the Umbrel App Store (Stacks → Add stack → Repository),
+# or from a terminal with: docker compose up -d --build
+# Then open http://umbrel.local:8686 on the iPad.
+services:
+  bauder-home:
+    build:
+      context: .
+      dockerfile: umbrel/Dockerfile
+    container_name: bauder-home
+    ports:
+      - "8686:80"
+    volumes:
+      # Put bauder-hq.json here to feed the Airbnb, Inspections and EV widgets.
+      - bauder-home-data:/usr/share/nginx/html/data
+    restart: unless-stopped
+
+volumes:
+  bauder-home-data:

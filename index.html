@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Bauder Home</title>
+  <meta name="description" content="A homeOS-style home screen for iPad: clock faces, widgets and Home Assistant controls.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Bauder Home">
+  <meta name="theme-color" content="#08110f">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="wall" aria-hidden="true"></div>
+
+  <div class="app">
+    <header class="topbar" id="top"></header>
+
+    <main class="home" id="home" aria-label="Home screen"></main>
+
+    <nav class="dock" aria-label="Apps">
+      <button type="button" class="appbtn" data-act="open" data-app="home">
+        <span class="ico home"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></span><span>Home</span>
+      </button>
+      <button type="button" class="appbtn" data-act="open" data-app="cal">
+        <span class="ico cal"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><span>Calendar</span>
+      </button>
+      <button type="button" class="appbtn" data-act="open" data-app="chef">
+        <span class="ico chef"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M2 11h20M9 7c0-2 2-2 2-4M14 7c0-2 2-2 2-4"/></svg></span><span>Sous Chef</span>
+      </button>
+      <button type="button" class="appbtn" data-act="open" data-app="timers">
+        <span class="ico tmr"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4"/></svg></span><span>Timers</span>
+      </button>
+      <button type="button" class="appbtn" data-act="open" data-app="photos">
+        <span class="ico pho"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></span><span>Photos</span>
+      </button>
+      <button type="button" class="appbtn" data-act="open" data-app="cams">
+        <span class="ico camr"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></svg></span><span>Cameras</span>
+      </button>
+      <button type="button" class="appbtn" data-act="open" data-app="settings">
+        <span class="ico set"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></span><span>Settings</span>
+      </button>
+    </nav>
+  </div>
+
+  <div class="pop" id="pop" role="menu" aria-label="Profiles" hidden></div>
+  <section class="sheet" id="sheet" aria-modal="true" role="dialog" hidden></section>
+  <section class="idle" id="idle" aria-label="Clock face. Tap to return to the home screen." hidden></section>
+  <div class="alarm" id="alarm" hidden></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript><p style="padding:24px">Bauder Home needs JavaScript turned on in Safari.</p></noscript>
+  <script src="app.js" defer></script>
+</body>
+</html>
