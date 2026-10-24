@@ -213,10 +213,12 @@
   const pName = (id) => personById(id)?.name || '';
   const nameToId = (n) => (S.people.find((p) => p.name.toLowerCase() === String(n || '').trim().toLowerCase()) || {}).id || '';
 
+  // "Match the iPad" leaves the page theme alone; only an explicit choice sets it.
+  let themeSet = false;
   function applyTheme() {
     const r = document.documentElement;
-    if (S.theme === 'light' || S.theme === 'dark') r.setAttribute('data-theme', S.theme);
-    else r.removeAttribute('data-theme');
+    if (S.theme === 'light' || S.theme === 'dark') { r.setAttribute('data-theme', S.theme); themeSet = true; }
+    else if (themeSet) { r.removeAttribute('data-theme'); themeSet = false; }
   }
 
   // ================================================================== time
@@ -684,6 +686,13 @@
     } catch (e) {
       const c = store.get('wxCache', null);
       if (c && !WX.now) { WX.now = c.now; WX.daily = (c.daily || []).map((d) => ({ ...d, date: new Date(d.date) })); WX.place = c.place; }
+      if (!WX.now && window.BH_PREVIEW) {
+        // The hosted preview can't reach the weather service, so it shows sample weather.
+        const days = [['partly', 'Partly cloudy', 54, 38], ['rain', 'Showers', 49, 37], ['cloud', 'Cloudy', 47, 35], ['sun', 'Sunny', 51, 33], ['partly', 'Partly cloudy', 50, 36], ['snow', 'Snow', 40, 29]];
+        WX.now = { temp: 52, icon: 'partly', text: 'Partly cloudy' };
+        WX.daily = days.map(([ic, text, hi, lo], i) => ({ date: addDays(startOfDay(new Date()), i), icon: ic, text, hi, lo, pop: [10, 60, 30, 0, 15, 70][i] }));
+        WX.place = `${S.place} · Sample`;
+      }
     }
     scheduleRender();
   }
@@ -2716,7 +2725,7 @@
     setInterval(loadFeed, 5 * 60000);
     setInterval(() => { const pe = powerEntity(); if (pe) loadPowerHistory(pe); }, 10 * 60000);
 
-    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    if ('serviceWorker' in navigator && location.protocol !== 'file:' && !window.BH_PREVIEW) {
       navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is optional */ });
     }
   }
