@@ -20,7 +20,7 @@ It's a web app that runs on iPadOS, not a replacement operating system. There's 
 | # | Feature | How it works |
 |---|---|---|
 | 7 | Doorbell, cameras, security | Doorbell rings wake the screen with a chime and camera view. The Security app lists anything unlocked or open with one-tap fixes, plus who's home, cameras and recent rings. Smoke, CO, gas, heat and leak sensors sound a full-screen alert with what to do. |
-| 8 | Kitchen | Weekly meal plan, recipes (paste from any site), step-by-step cooking with one-tap timers, several timers at once, and "add this week's ingredients to Groceries". |
+| 8 | Kitchen | Monday–Sunday meal plan picked from a built-in recipe library, recipes you paste yourself, step-by-step cooking with one-tap timers, several timers at once, and "add this week's ingredients to Groceries". |
 | 9 | Music | Now playing, play/pause, skip, volume and source for every speaker in Home Assistant. |
 | 10 | Household assistant | Type or speak. Timers, lists, modes, "what's next", "is the house okay", weather and dinner are handled on the iPad. Anything else goes to Home Assistant Assist. |
 | 11 | Photo frame | Photos from the iPad play on the idle screen, which dims to a red clock overnight. Bold, Analog and Glance faces too. |
@@ -38,6 +38,26 @@ It's a web app that runs on iPadOS, not a replacement operating system. There's 
 The home screen is a widget gallery. In **Settings → Home screen** you choose and order widgets separately for the family screen and the guest screen. The first screen holds 12 squares (4 across, 3 down) and the rest scroll.
 
 **Countdown** (layout id `count`) is one of those widgets. It shows how many days remain until a date, counted in Pacific time. The default is June 1, 2027, with the label “June 1, 2027”. Change the date and the label in **Settings → Home screen**. On the day itself it says Today, and after that it counts the days since. The date and label stay on the iPad. A home screen that still has the old Inspections square shows the countdown in that same spot.
+
+## Meal plan
+
+Open **Kitchen → Meal plan**. The week is Monday through Sunday. A day with nothing planned starts with a **Cuisine** menu. Choosing one reveals the next group, and that repeats until a specific recipe is selected. **Save** stores that recipe as the day’s meal on this iPad (`{ date: { text, recipe } }`). Tap the meal to open the recipe. Times written in the steps, such as “bake 25 minutes”, become one-tap timers. **Change** reopens the menus on the recipe you already picked. **Clear** removes that day.
+
+The built-in library is 100 home-cook recipes in `recipes-library.js`, each about 30 minutes with ordinary ingredients. The picker walks this tree:
+
+| Cuisine | Then |
+|---|---|
+| Mexican | Chicken (Tacos, Skillet, Quesadillas), Beef (Tacos, Bowls), Vegetarian (Tacos, Skillet), Seafood |
+| Italian | Pasta, Chicken, Vegetarian, Seafood |
+| Asian | Stir-Fry (Chicken, Beef, Tofu, Shrimp), Noodles, Rice, Curry |
+| American Comfort | Chicken, Beef, Sandwiches, Breads |
+| Mediterranean | Chicken, Seafood, Vegetarian, Beef |
+| Breakfast | Eggs, Grains, Toast |
+| Soups & Stews | Chicken, Beans, Vegetable |
+| Salads & Bowls | Salads, Bowls |
+| Grill | Chicken, Beef, Seafood, Vegetables |
+
+Cast-iron skillet cornbread is **American Comfort → Breads**. Recipes you paste on the Recipes tab appear as a last cuisine, **My recipes**. The library itself is not copied into the iPad’s recipe list.
 
 ## Feasibility notes
 
@@ -159,6 +179,7 @@ The backup leaves out the Home Assistant token and PIN unless you tick the box. 
 | `index.html` | Page shell |
 | `styles.css` | All styling. Colors and fonts are tokens at the top, with light and dark sets. |
 | `app.js` | Everything else: Home Assistant, widgets, apps, modes, assistant, clock faces |
+| `recipes-library.js` | Built-in meal-plan recipes and the cuisine tree. Cached with the app shell. |
 | `sw.js` | Offline support. Bump `CACHE` after changing files. |
 | `manifest.webmanifest`, `icons/` | Home-screen install |
 | `apps-script/BauderHomeFeed.gs` | Google Calendar and Airbnb feed (runs in your Google account) |

@@ -475,7 +475,17 @@
   const saveEmerg = () => store.set('emergency', EMERG);
   const MEALS = store.get('meals', null) || { [isoDay(0)]: { recipe: 'sample-cornbread', text: 'Chili' }, _sample: true };
   const saveMeals = () => store.set('meals', MEALS);
-  let recipes = store.get('recipes', null) || [SAMPLE_RECIPE];
+  let recipes = store.get('recipes', null);
+  if (!Array.isArray(recipes)) recipes = [];
+  const RECIPE_LIB = (typeof window !== 'undefined' && window.BAUDER_RECIPES && window.BAUDER_RECIPES.recipes)
+    ? window.BAUDER_RECIPES
+    : { tree: [], recipes: {} };
+  const LIB_RECIPES = { ...(RECIPE_LIB.recipes || {}) };
+  if (!LIB_RECIPES['sample-cornbread']) {
+    LIB_RECIPES['sample-cornbread'] = { title: SAMPLE_RECIPE.title, ingredients: SAMPLE_RECIPE.ingredients.slice(), steps: SAMPLE_RECIPE.steps.slice() };
+  }
+  // Built-in dishes live in the library file. Keep only recipes typed on this iPad.
+  recipes = recipes.filter((r) => r && r.id && r.title && !LIB_RECIPES[r.id]);
   const saveRecipes = () => store.set('recipes', recipes);
   let RINGS = store.get('rings', []);
 
@@ -1218,14 +1228,92 @@
     }
     return out;
   }
+  /* MEAL_FNS */
+  function mealWeekDates(now) {
+    const start = new Date(now.getTime());
+    start.setHours(12, 0, 0, 0);
+    const day = start.getDay();
+    start.setDate(start.getDate() + (day === 0 ? -6 : 1 - day));
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start.getTime());
+      d.setDate(start.getDate() + i);
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      out.push(`${d.getFullYear()}-${m}-${dd}`);
+    }
+    return out;
+  }
+  function mealNodeKey(node) {
+    return (node && (node.id || node.name)) || '';
+  }
+  function mealNodesAt(roots, path) {
+    let nodes = roots || [];
+    for (const key of path || []) {
+      const node = nodes.find((n) => mealNodeKey(n) === key);
+      if (!node || !Array.isArray(node.children)) return [];
+      nodes = node.children;
+    }
+    return nodes;
+  }
+  function mealPathForId(roots, id) {
+    if (!id) return [];
+    function walk(nodes, path) {
+      for (const n of nodes || []) {
+        const key = mealNodeKey(n);
+        if (n.id === id) return path.concat(key);
+        if (n.children) {
+          const hit = walk(n.children, path.concat(key));
+          if (hit) return hit;
+        }
+      }
+      return null;
+    }
+    return walk(roots, []) || [];
+  }
+  function mealChosenId(roots, path) {
+    if (!path || !path.length) return '';
+    const id = path[path.length - 1];
+    const parent = mealNodesAt(roots, path.slice(0, -1));
+    const node = parent.find((n) => mealNodeKey(n) === id);
+    if (!node || !node.id || node.children) return '';
+    return node.id;
+  }
+  /* /MEAL_FNS */
+
+  function libRecipe(id) {
+    const r = LIB_RECIPES[id];
+    if (!r) return null;
+    return { id, title: r.title, ingredients: r.ingredients || [], steps: r.steps || [], library: true };
+  }
+  function allRecipe(id) {
+    if (!id) return null;
+    return recipes.find((x) => x.id === id) || libRecipe(id);
+  }
+  function recipeByTitle(title) {
+    const t = String(title || '').trim().toLowerCase();
+    if (!t) return null;
+    return recipes.find((x) => x.title.toLowerCase() === t)
+      || Object.keys(LIB_RECIPES).map((id) => libRecipe(id)).find((r) => r && r.title.toLowerCase() === t)
+      || null;
+  }
+  function recipeRoots() {
+    const roots = Array.isArray(RECIPE_LIB.tree) ? RECIPE_LIB.tree.slice() : [];
+    if (recipes.length) roots.push({ name: 'My recipes', children: recipes.map((r) => ({ id: r.id })) });
+    return roots;
+  }
   function mealFor(iso) {
     const m = MEALS[iso];
     if (!m) return '';
-    const r = recipes.find((x) => x.id === m.recipe);
+    const r = allRecipe(m.recipe);
     const text = String(m.text || '').trim();
     if (!r) return text;
     if (!text || text.toLowerCase() === r.title.toLowerCase() || r.title.toLowerCase().includes(text.toLowerCase())) return r.title;
     return `${text} with ${r.title}`;
+  }
+  function mealSaved(iso) {
+    const m = MEALS[iso];
+    return !!(m && (String(m.text || '').trim() || m.recipe));
   }
 
   // ================================================================ photos
@@ -1925,7 +2013,7 @@
 
   // =================================================================== apps
   const APP = {
-    name: null, room: 'fav', ttab: 'groceries', ktab: 'plan', recipeId: null, step: 0, adding: false, checked: new Set(), confirm: null,
+    name: null, room: 'fav', ttab: 'groceries', ktab: 'plan', recipeId: null, step: 0, adding: false, checked: new Set(), confirm: null, mealEdit: null, mealPath: {},
     calView: 'week', calOffset: 0, calHide: new Set(), stab: 'connect', layoutKey: 'main', modeEdit: 'morning', emEdit: false,
   };
 
@@ -1936,7 +2024,7 @@
       if (name === 'settings' && S.pin && !(await askPin('Enter PIN to open Settings'))) return;
     }
     if (name !== APP.name) { APP.confirm = null; selectedPhotos.clear(); APP.emEdit = false; }
-    if (name !== 'kitchen') { APP.recipeId = null; APP.adding = false; }
+    if (name !== 'kitchen') { APP.recipeId = null; APP.adding = false; APP.mealEdit = null; APP.mealPath = {}; }
     APP.name = name;
     if (opts.ktab) { APP.ktab = opts.ktab; APP.recipeId = null; APP.adding = false; }
     if (opts.ttab) APP.ttab = opts.ttab;
@@ -1953,6 +2041,8 @@
     APP.name = null;
     APP.recipeId = null;
     APP.adding = false;
+    APP.mealEdit = null;
+    APP.mealPath = {};
     $('#sheet').hidden = true;
     $('#sheet').innerHTML = '';
     renderAll();
@@ -1970,8 +2060,9 @@
     let title = APP_TITLES[APP.name];
     let lead = '';
     if (APP.name === 'kitchen' && (APP.recipeId || APP.adding)) {
-      lead = `<button type="button" class="chip plain" data-act="chef-back">${icon('back')}Recipes</button>`;
-      if (APP.recipeId) title = recipes.find((r) => r.id === APP.recipeId)?.title || title;
+      const backLabel = APP.adding || APP.ktab !== 'plan' ? 'Recipes' : 'Meal plan';
+      lead = `<button type="button" class="chip plain" data-act="chef-back">${icon('back')}${backLabel}</button>`;
+      if (APP.recipeId) title = allRecipe(APP.recipeId)?.title || title;
       if (APP.adding) title = 'Add a recipe';
     }
     const body = APPS[APP.name]();
@@ -2101,16 +2192,17 @@
         <p class="help">Lines under “Ingredients” become a checklist and lines under “Directions” become steps.</p>
         <div class="quick"><button type="button" class="qbtn primary" data-act="recipe-save">Save recipe</button><button type="button" class="qbtn" data-act="chef-back">Cancel</button></div></div>`;
     }
-    const r = recipes.find((x) => x.id === APP.recipeId);
+    const r = allRecipe(APP.recipeId);
     if (!r) { APP.recipeId = null; return appKitchen(); }
     const n = r.steps.length;
     const i = clamp(APP.step, 0, Math.max(0, n - 1));
     const text = r.steps[i] || 'This recipe has no steps.';
     const tms = stepTimers(text).map((t) => `<button type="button" class="qbtn primary" data-act="timer" data-sec="${t.sec}" data-label="${esc(r.title)} · ${esc(t.label)}">${icon('timer')} Start ${esc(fmtDur(t.sec))}</button>`).join('');
     const confirmDel = APP.confirm === 'del-' + r.id;
+    const delBtn = r.library ? '' : `<button type="button" class="qbtn danger" data-act="recipe-del" data-id="${esc(r.id)}">${icon('trash')} ${confirmDel ? 'Tap again to delete' : 'Delete'}</button>`;
     return `<div class="cook">
       <div><div class="section-title">Ingredients</div><div class="ingredients">${r.ingredients.map((x, k) => `<label><input type="checkbox" data-ing="${k}" ${APP.checked.has(k) ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('') || '<p class="help">No ingredients listed.</p>'}</div>
-        <div class="quick" style="margin-top:16px"><button type="button" class="qbtn" data-act="recipe-groceries" data-id="${esc(r.id)}">${icon('cart')} Add to Groceries</button><button type="button" class="qbtn danger" data-act="recipe-del" data-id="${esc(r.id)}">${icon('trash')} ${confirmDel ? 'Tap again to delete' : 'Delete'}</button></div></div>
+        <div class="quick" style="margin-top:16px"><button type="button" class="qbtn" data-act="recipe-groceries" data-id="${esc(r.id)}">${icon('cart')} Add to Groceries</button>${delBtn}</div></div>
       <div class="stepcard"><div class="count">Step ${n ? i + 1 : 0} of ${n}</div><div class="text">${esc(text)}</div>${tms ? `<div class="quick">${tms}</div>` : ''}
         <div class="stepnav"><button type="button" class="qbtn" data-act="step" data-dir="-1" ${i === 0 ? 'disabled' : ''}>Back</button><button type="button" class="qbtn primary" data-act="step" data-dir="1" ${i >= n - 1 ? 'disabled' : ''}>Next step</button></div></div></div>
       ${timers.length ? `<div class="section-title">Timers</div>${timerCards()}` : ''}`;
@@ -2120,20 +2212,61 @@
     const tabs = [['plan', 'Meal plan'], ['recipes', 'Recipes'], ['timers', 'Timers']];
     const seg = `<div class="seg" role="group" aria-label="Kitchen">${tabs.map(([k, v]) => `<button type="button" data-act="k-tab" data-tab="${k}" aria-pressed="${APP.ktab === k}">${v}</button>`).join('')}</div>`;
     if (APP.ktab === 'recipes') {
+      const cards = recipes.length
+        ? recipes.map((r) => `<button type="button" class="recipe-card" data-act="recipe-open" data-id="${esc(r.id)}"><span class="t">${esc(r.title)}</span><span class="muted">${r.ingredients.length} ingredients · ${r.steps.length} steps</span></button>`).join('')
+        : '<div class="empty">None yet. Paste one here, or plan the week from the built-in recipes.</div>';
       return `${seg}<div class="quick" style="margin-bottom:16px"><button type="button" class="qbtn primary" data-act="recipe-add">${icon('plus')} Add a recipe</button></div>
-        <div class="recipes">${recipes.map((r) => `<button type="button" class="recipe-card" data-act="recipe-open" data-id="${esc(r.id)}"><span class="t">${esc(r.title)}</span><span class="muted">${r.ingredients.length} ingredients · ${r.steps.length} steps</span>${r.sample ? '<span><span class="tag">Sample</span></span>' : ''}</button>`).join('')}</div>
-        <p class="help" style="margin-top:16px">Paste a recipe from any website. Step mode keeps the clock face away while you cook, and times like “bake 25 minutes” become one-tap timers.</p>`;
+        <div class="recipes">${cards}</div>
+        <p class="help" style="margin-top:16px">Paste a recipe from any website. It shows up in the meal plan under My recipes. Step mode keeps the clock face away while you cook, and times like “bake 25 minutes” become one-tap timers.</p>`;
     }
     if (APP.ktab === 'timers') return seg + timersHTML();
-    const rows = Array.from({ length: 7 }, (_, i) => {
-      const d = addDays(new Date(), i), iso = isoOf(d), m = MEALS[iso] || {};
-      return `<div class="meal-row${i === 0 ? ' today' : ''}"><div class="d">${esc(i === 0 ? 'Tonight' : d.toLocaleDateString(undefined, { weekday: 'long' }))}<span>${esc(d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</span></div>
-        <div class="pair"><input id="meal-t-${iso}" data-meal-text="${iso}" value="${esc(m.text || '')}" placeholder="Dinner, like “Tacos”" aria-label="Dinner"><select id="meal-r-${iso}" data-meal-recipe="${iso}" aria-label="Recipe"><option value="">No recipe</option>${recipes.map((r) => `<option value="${esc(r.id)}" ${r.id === m.recipe ? 'selected' : ''}>${esc(r.title)}</option>`).join('')}</select></div></div>`;
-    }).join('');
-    const rid = MEALS[isoDay(0)]?.recipe;
-    return `${seg}${MEALS._sample ? '<p class="help" style="margin-bottom:12px">Sample plan. Change any night to make it yours.</p>' : ''}
+    const rows = mealWeekDates(new Date()).map((iso) => mealPlanRow(iso)).join('');
+    const todayMeal = MEALS[isoDay(0)];
+    const rid = todayMeal && allRecipe(todayMeal.recipe) ? todayMeal.recipe : '';
+    return `${seg}${MEALS._sample ? '<p class="help" style="margin-bottom:8px">Sample plan for today. Save a recipe on any day to make the week yours.</p>' : ''}
+      <p class="help" style="margin-bottom:12px">Choose a cuisine, then the next group, until a recipe is selected. Save stores it for that day. Tap a planned meal to cook it. Change or Clear a day anytime.</p>
       <div class="panel" style="padding-block:6px">${rows}</div>
       <div class="quick" style="margin-top:14px">${rid ? `<button type="button" class="qbtn primary" data-act="recipe-open" data-id="${esc(rid)}">Start cooking tonight’s recipe</button>` : ''}<button type="button" class="qbtn" data-act="meal-groceries">${icon('cart')} Add this week’s ingredients to Groceries</button></div>`;
+  }
+  function mealPlanRow(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    const date = new Date(y, m - 1, d, 12);
+    const today = iso === isoDay(0);
+    const dayName = date.toLocaleDateString(undefined, { weekday: 'long' });
+    const when = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const head = `<div class="d">${esc(dayName)}${today ? ' · Today' : ''}<span>${esc(when)}</span></div>`;
+    if (mealSaved(iso) && APP.mealEdit !== iso) {
+      const label = mealFor(iso) || 'Meal';
+      const rec = allRecipe(MEALS[iso].recipe);
+      const name = rec
+        ? `<button type="button" class="meal-name" data-act="recipe-open" data-id="${esc(rec.id)}">${esc(label)}</button>`
+        : `<div class="meal-name">${esc(label)}</div>`;
+      return `<div class="meal-row${today ? ' today' : ''}">${head}<div class="meal-set">${name}<div class="quick"><button type="button" class="qbtn" data-act="meal-edit" data-day="${iso}">Change</button><button type="button" class="qbtn" data-act="meal-clear" data-day="${iso}">Clear</button></div></div></div>`;
+    }
+    const roots = recipeRoots();
+    const path = APP.mealPath[iso] || [];
+    const levels = [];
+    let depth = 0;
+    let nodes = mealNodesAt(roots, []);
+    while (nodes.length) {
+      const chosen = path[depth] || '';
+      const recipesOnly = nodes.every((n) => n.id && !n.children);
+      const label = depth === 0 ? 'Cuisine' : recipesOnly ? 'Recipe' : 'Next';
+      const opts = nodes.map((n) => {
+        const key = mealNodeKey(n);
+        const name = n.id ? (allRecipe(n.id)?.title || n.id) : n.name;
+        return `<option value="${esc(key)}" ${key === chosen ? 'selected' : ''}>${esc(name)}</option>`;
+      }).join('');
+      levels.push(`<label class="field"><span>${label}</span><select data-meal-level="${depth}" data-meal-day="${iso}" aria-label="${label} for ${esc(dayName)}"><option value="">Choose…</option>${opts}</select></label>`);
+      if (!chosen) break;
+      const node = nodes.find((n) => mealNodeKey(n) === chosen);
+      if (!node || !node.children) break;
+      nodes = node.children;
+      depth += 1;
+    }
+    const ready = mealChosenId(roots, path);
+    const cancel = mealSaved(iso) ? `<button type="button" class="qbtn" data-act="meal-cancel" data-day="${iso}">Cancel</button>` : '';
+    return `<div class="meal-row${today ? ' today' : ''}">${head}<div class="meal-pick"><div class="meal-levels">${levels.join('')}</div><div class="quick"><button type="button" class="qbtn primary" data-act="meal-save" data-day="${iso}" ${ready ? '' : 'disabled'}>Save</button>${cancel}</div></div></div>`;
   }
 
   // ---- Music
@@ -2444,7 +2577,7 @@
     const lists = {};
     ['groceries', 'chores', 'reminders', 'board'].forEach((k) => { lists[k] = (LISTS[k] || []).map((i) => ({ text: i.text, who: nameOf(i.who), due: i.due || '', done: !!i.done })); });
     const meals = {};
-    Object.entries(MEALS).forEach(([d, m]) => { if (d === '_sample' || !m) return; const r = recipes.find((x) => x.id === m.recipe); meals[d] = { text: m.text || '', recipe: r ? r.title : '' }; });
+    Object.entries(MEALS).forEach(([d, m]) => { if (d === '_sample' || !m) return; const r = allRecipe(m.recipe); meals[d] = { text: m.text || '', recipe: r ? r.title : '' }; });
     return {
       bauderHome: 1,
       exported: new Date().toISOString(),
@@ -2511,8 +2644,8 @@
     }
     if (Array.isArray(o.recipes)) {
       const fresh = o.recipes.filter((r) => r && r.title).map((r) => ({ id: uid(), title: String(r.title), ingredients: (r.ingredients || []).map(String), steps: (r.steps || []).map(String) }));
-      recipes = recipes.filter((r) => !r.sample && !fresh.some((f) => f.title.toLowerCase() === r.title.toLowerCase())).concat(fresh);
-      if (!recipes.length) recipes = [SAMPLE_RECIPE];
+      recipes = recipes.filter((r) => !r.sample && !LIB_RECIPES[r.id] && !fresh.some((f) => f.title.toLowerCase() === r.title.toLowerCase())).concat(fresh);
+      if (!recipes.length && !LIB_RECIPES['sample-cornbread']) recipes = [SAMPLE_RECIPE];
       saveRecipes();
       done.push('recipes');
     }
@@ -2521,7 +2654,7 @@
       Object.entries(o.meals).forEach(([d, m]) => {
         if (!isDay(d)) return;
         if (!m) { delete MEALS[d]; return; }
-        const r = m.recipe ? recipes.find((x) => x.title.toLowerCase() === String(m.recipe).toLowerCase()) : null;
+        const r = m.recipe ? recipeByTitle(m.recipe) : null;
         MEALS[d] = { text: String(m.text || ''), recipe: r ? r.id : '' };
       });
       MEALS._sample = false;
@@ -2882,6 +3015,7 @@
     },
     'recipe-del': (el) => {
       const id = el.dataset.id;
+      if (!recipes.some((r) => r.id === id)) return;
       if (APP.confirm !== 'del-' + id) { APP.confirm = 'del-' + id; renderApp(); return; }
       recipes = recipes.filter((r) => r.id !== id);
       saveRecipes();
@@ -2889,14 +3023,52 @@
       renderApp();
       toast('Recipe deleted');
     },
-    'recipe-groceries': (el) => { const r = recipes.find((x) => x.id === el.dataset.id); if (r) addIngredients(r.ingredients); },
+    'recipe-groceries': (el) => { const r = allRecipe(el.dataset.id); if (r) addIngredients(r.ingredients); },
     'meal-groceries': () => {
       const all = [];
-      for (let i = 0; i < 7; i++) { const m = MEALS[isoDay(i)]; const r = m && recipes.find((x) => x.id === m.recipe); if (r) all.push(...r.ingredients); }
+      mealWeekDates(new Date()).forEach((iso) => { const m = MEALS[iso]; const r = m && allRecipe(m.recipe); if (r) all.push(...r.ingredients); });
       if (!all.length) { toast('Pick recipes for this week first.'); return; }
       addIngredients(all);
     },
-    'chef-back': () => { APP.adding = false; APP.recipeId = null; APP.confirm = null; APP.ktab = 'recipes'; renderApp(); },
+    'meal-edit': (el) => {
+      const iso = el.dataset.day;
+      APP.mealEdit = iso;
+      APP.mealPath[iso] = mealPathForId(recipeRoots(), MEALS[iso]?.recipe || '');
+      renderApp();
+    },
+    'meal-cancel': (el) => {
+      const iso = el.dataset.day;
+      if (APP.mealEdit === iso) APP.mealEdit = null;
+      delete APP.mealPath[iso];
+      renderApp();
+    },
+    'meal-clear': (el) => {
+      const iso = el.dataset.day;
+      delete MEALS[iso];
+      if (APP.mealEdit === iso) APP.mealEdit = null;
+      delete APP.mealPath[iso];
+      MEALS._sample = false;
+      saveMeals();
+      renderAll();
+    },
+    'meal-save': (el) => {
+      const iso = el.dataset.day;
+      const id = mealChosenId(recipeRoots(), APP.mealPath[iso] || []);
+      const r = allRecipe(id);
+      if (!r) return;
+      MEALS[iso] = { text: r.title, recipe: r.id };
+      MEALS._sample = false;
+      if (APP.mealEdit === iso) APP.mealEdit = null;
+      delete APP.mealPath[iso];
+      saveMeals();
+      renderAll();
+    },
+    'chef-back': () => {
+      const adding = APP.adding;
+      APP.adding = false; APP.recipeId = null; APP.confirm = null;
+      if (adding) APP.ktab = 'recipes';
+      renderApp();
+    },
     step: (el) => { APP.step += +el.dataset.dir; renderApp(); },
     media: (el) => call('media_player', { play: 'media_play_pause', next: 'media_next_track', prev: 'media_previous_track' }[el.dataset.cmd], el.dataset.entity),
     'photo-sel': (el) => { const id = el.dataset.id; if (selectedPhotos.has(id)) selectedPhotos.delete(id); else selectedPhotos.add(id); APP.confirm = null; renderApp(); },
@@ -3050,8 +3222,15 @@
     if (d.modeFlag) { const [mid, f] = d.modeFlag.split('|'); S.modes[mid][f] = t.checked; saveSettings(); renderApp(); return; }
     if (d.modeTemp) { const v = t.value.trim(); S.modes[d.modeTemp].temp = v === '' ? '' : clamp(+v, 45, 90); saveSettings(); renderApp(); return; }
     if (d.modeAfter) { S.modes[d.modeAfter].after = t.value; saveSettings(); renderApp(); return; }
-    if (d.mealText) { MEALS[d.mealText] = { ...(MEALS[d.mealText] || {}), text: t.value.trim() }; MEALS._sample = false; saveMeals(); renderAll(); return; }
-    if (d.mealRecipe) { MEALS[d.mealRecipe] = { ...(MEALS[d.mealRecipe] || {}), recipe: t.value }; MEALS._sample = false; saveMeals(); renderAll(); return; }
+    if (d.mealLevel != null && d.mealDay) {
+      const iso = d.mealDay;
+      const level = +d.mealLevel;
+      const path = (APP.mealPath[iso] || []).slice(0, level);
+      if (t.value) path.push(t.value);
+      APP.mealPath[iso] = path;
+      renderApp();
+      return;
+    }
     if (d.em) { EMERG[d.em] = t.value; saveEmerg(); renderHome(); return; }
     if (d.emc) { const c = EMERG.contacts.find((x) => x.id === d.emc); if (c) { c[d.f] = t.value.trim(); saveEmerg(); } return; }
     if (d.set) {
