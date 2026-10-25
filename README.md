@@ -39,6 +39,30 @@ The home screen is a widget gallery. In **Settings → Home screen** you choose 
 
 **Countdown** (layout id `count`) is one of those widgets. It shows how many days remain until a date, counted in Pacific time. The default is June 1, 2027, with the label “June 1, 2027”. Change the date and the label in **Settings → Home screen**. On the day itself it says Today, and after that it counts the days since. The date and label stay on the iPad. A home screen that still has the old Inspections square shows the countdown in that same spot.
 
+## Tesla
+
+The **Tesla** widget (layout id `tesla`) is a private 2×2 card for two vehicles. It is on the default family home screen, after the first 12 squares, so that screen still fits. It does not appear on the guest screen. Commands go through the Home Assistant connection this app already uses, which is what you want when the iPad is locked to Bauder Home with Guided Access.
+
+Each car has a name and a picture you choose in **Settings → Home screen → Tesla**. The picture stays on this iPad and is not part of a backup. Until you choose one, the card shows a plain car silhouette. There are no sample temperatures or battery levels: if Home Assistant is disconnected, or that car has no climate entity, the card says **Not connected** and the buttons stay off.
+
+**Warm up** calls `climate.set_hvac_mode` with `heat_cool`, then `climate.turn_on`, and turns on the defrost or preconditioning switch if you mapped one. **Off** turns that switch off and shuts the climate down. The card’s label comes from the live Home Assistant state: **Warming** while the climate is on, **Defrosting** while the defrost switch is on or the climate reports defrosting. The active card is highlighted.
+
+Home Assistant needs a Tesla integration that creates a climate entity per car. Either of these is fine:
+
+1. **Tesla Fleet**, built into Home Assistant. In Home Assistant go to **Settings → Devices & services → Add integration → Tesla Fleet** and follow [Tesla Fleet](https://www.home-assistant.io/integrations/tesla_fleet/). That integration registers your app with Tesla’s Fleet API. When the vehicles finish loading, open the device and note the entities.
+2. **Teslemetry**, a common custom integration installed through HACS. Add the Teslemetry integration and sign in with the access token from your Teslemetry account. It creates the same kind of entities.
+
+Typical entity ids, with `<car>` replaced by the vehicle name Home Assistant chose:
+
+| What | Entity |
+|---|---|
+| Climate | `climate.<car>_climate` |
+| Inside temperature | `sensor.<car>_inside_temperature` |
+| Battery level | `sensor.<car>_battery_level` |
+| Defrost or precondition | `switch.<car>_defrost` |
+
+Names vary a little by integration. In **Settings → Home screen → Tesla**, each menu lists the matching entities from your Home Assistant, so pick the climate entity for that car and any of the optional sensors and the switch. You do not type the ids in. Nothing about the cars is stored in this repo.
+
 ## Meal plan
 
 Open **Kitchen → Meal plan**. The week is Monday through Sunday. A day with nothing planned starts with a **Cuisine** menu. Choosing one reveals the next group, and that repeats until a specific recipe is selected. **Save** stores that recipe as the day’s meal on this iPad (`{ date: { text, recipe } }`). Tap the meal to open the recipe. Times written in the steps, such as “bake 25 minutes”, become one-tap timers. **Change** reopens the menus on the recipe you already picked. **Clear** removes that day.

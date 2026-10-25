@@ -83,6 +83,88 @@
   }
   /* /COUNTDOWN_FNS */
 
+  /* TESLA_FNS */
+  const TESLA_LAYOUT_ID = 'tesla';
+  const TESLA_DEFAULT_CARS = [
+    { name: 'Car 1', climate: '', inside: '', battery: '', defrost: '' },
+    { name: 'Car 2', climate: '', inside: '', battery: '', defrost: '' },
+  ];
+  const TESLA_PREV_MAIN = ['time', 'status', 'next', 'home', 'tasks', 'cam', 'kitchen', 'media', 'board', 'energy', 'packages', 'emergency', 'bnb', 'count', 'ev'];
+
+  function teslaEntityId(value) {
+    const s = String(value || '').trim().toLowerCase();
+    return /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/.test(s) ? s : '';
+  }
+  function cleanTeslaCars(raw) {
+    const src = Array.isArray(raw) ? raw : [];
+    return [0, 1].map((i) => {
+      const c = src[i] && typeof src[i] === 'object' ? src[i] : {};
+      const name = String(c.name || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+      return {
+        name: name || TESLA_DEFAULT_CARS[i].name,
+        climate: teslaEntityId(c.climate),
+        inside: teslaEntityId(c.inside),
+        battery: teslaEntityId(c.battery),
+        defrost: teslaEntityId(c.defrost),
+      };
+    });
+  }
+  function withTeslaWidget(main) {
+    if (!Array.isArray(main) || main.includes(TESLA_LAYOUT_ID)) return main;
+    const same = main.length === TESLA_PREV_MAIN.length && main.every((id, i) => id === TESLA_PREV_MAIN[i]);
+    return same ? main.concat([TESLA_LAYOUT_ID]) : main;
+  }
+  function teslaBadState(state) {
+    if (!state || typeof state !== 'object') return true;
+    const s = String(state.state || '').toLowerCase();
+    return !s || s === 'unavailable' || s === 'unknown';
+  }
+  function teslaNumber(state) {
+    if (teslaBadState(state)) return null;
+    const n = parseFloat(state.state);
+    return Number.isFinite(n) ? n : null;
+  }
+  function teslaInsideText(state) {
+    const n = teslaNumber(state);
+    return n == null ? '' : `${Math.round(n)}°`;
+  }
+  function teslaBatteryText(state) {
+    const n = teslaNumber(state);
+    return n == null ? '' : `${Math.round(n)}%`;
+  }
+  function teslaClimateOn(state) {
+    if (teslaBadState(state)) return false;
+    const mode = String(state.state || '').toLowerCase();
+    if (mode && mode !== 'off') return true;
+    const action = String(state.attributes && state.attributes.hvac_action || '').toLowerCase();
+    return action === 'heating' || action === 'cooling' || action === 'preheating' || action === 'defrosting';
+  }
+  function teslaSwitchOn(state) {
+    return !teslaBadState(state) && String(state.state || '').toLowerCase() === 'on';
+  }
+  function teslaCarView(car, live, states) {
+    const st = states || {};
+    const climate = car.climate ? st[car.climate] : null;
+    const connected = !!(live && car.climate && climate && !teslaBadState(climate));
+    if (!connected) return { connected: false, label: 'Not connected', warming: false, defrosting: false, inside: '', battery: '' };
+    const defrost = car.defrost ? st[car.defrost] : null;
+    const switchOn = !!(car.defrost && teslaSwitchOn(defrost));
+    const blob = `${car.defrost} ${(defrost && defrost.attributes && defrost.attributes.friendly_name) || ''}`.toLowerCase();
+    const action = String(climate.attributes && climate.attributes.hvac_action || '').toLowerCase();
+    const defrosting = action === 'defrosting' || (switchOn && /defrost/.test(blob));
+    const warming = !defrosting && (teslaClimateOn(climate) || switchOn);
+    const label = defrosting ? 'Defrosting' : warming ? 'Warming' : 'Off';
+    return {
+      connected: true,
+      label,
+      warming,
+      defrosting,
+      inside: car.inside ? teslaInsideText(st[car.inside]) : '',
+      battery: car.battery ? teslaBatteryText(st[car.battery]) : '',
+    };
+  }
+  /* /TESLA_FNS */
+
   // ================================================================== icons
   const ICON = {
     bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2V16h5v-.2c.1-.8.5-1.5 1.1-2A6 6 0 0 0 12 3z"/>',
@@ -137,6 +219,7 @@
     mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
     send: '<path d="M4 12l16-8-6 16-2.5-6.5z"/>',
     box: '<path d="M3 7.5L12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5l9 4.5 9-4.5M12 12v9"/>',
+    car: '<path d="M3 14l2-5a3 3 0 0 1 3-2h6l3 3h2a2 2 0 0 1 2 2v2H3z"/><circle cx="7.5" cy="16.5" r="1.6"/><circle cx="16.5" cy="16.5" r="1.6"/>',
     msg: '<path d="M4 5h16v11H9l-5 4z"/>',
     phone: '<path d="M5 4h3l2 5-2 1.5a11 11 0 0 0 5.5 5.5L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
     sos: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5h.01"/>',
@@ -186,10 +269,11 @@
     bnb: ['Airbnb & cleaning', 'tall', true],
     count: ['Countdown', 'small'],
     ev: ['EV projects', 'small', true],
+    tesla: ['Tesla', 'large', true],
   };
   const SIZE_LABEL = { small: '1×1', wide: '2×1', tall: '1×2', large: '2×2' };
   const DEFAULT_LAYOUT = {
-    main: ['time', 'status', 'next', 'home', 'tasks', 'cam', 'kitchen', 'media', 'board', 'energy', 'packages', 'emergency', 'bnb', 'count', 'ev'],
+    main: ['time', 'status', 'next', 'home', 'tasks', 'cam', 'kitchen', 'media', 'board', 'energy', 'packages', 'emergency', 'bnb', 'count', 'ev', 'tesla'],
     guest: ['time', 'status', 'emergency', 'home', 'kitchen', 'media', 'forecast', 'timer'],
   };
   function layoutList(list, key, dropPrivate) {
@@ -247,6 +331,7 @@
     arrivals: {},
     awayMode: '',
     speak: true,
+    tesla: { cars: TESLA_DEFAULT_CARS.map((c) => ({ ...c })) },
   };
 
   function loadSettings() {
@@ -263,6 +348,8 @@
     });
     Object.keys(DEFAULT_MODES).forEach((id) => { s.modes[id] = { ...DEFAULT_MODES[id], ...((saved.modes || {})[id] || {}) }; });
     ['main', 'guest'].forEach((k) => { s.layout[k] = layoutList(s.layout[k], k, false); });
+    s.layout.main = withTeslaWidget(s.layout.main);
+    s.tesla = { cars: cleanTeslaCars(s.tesla && s.tesla.cars) };
     const countdown = cleanCountdownSettings(s.countdownDate, s.countdownLabel);
     s.countdownDate = countdown.date;
     s.countdownLabel = countdown.label;
@@ -271,6 +358,12 @@
   }
   const S = loadSettings();
   const saveSettings = () => store.set('settings', S);
+  let teslaPhotos = [null, null];
+  {
+    const savedPhotos = store.get('teslaPhotos', []);
+    teslaPhotos = [0, 1].map((i) => (typeof savedPhotos?.[i] === 'string' && savedPhotos[i].startsWith('data:image/') ? savedPhotos[i] : null));
+  }
+  const saveTeslaPhotos = () => store.set('teslaPhotos', teslaPhotos);
 
   const personById = (id) => S.people.find((p) => p.id === id);
   const curProfile = () => personById(S.profile) || S.people[0];
@@ -673,6 +766,23 @@
       toast(`Couldn’t reach ${entityName(id)}. Check the Home Assistant connection.`);
       return false;
     }
+  }
+  async function callQuiet(domain, service, id, data = {}) {
+    if (!H.live || !id) return false;
+    try {
+      await haSend({ type: 'call_service', domain, service, service_data: data, target: { entity_id: id } });
+      return true;
+    } catch (e) { return false; }
+  }
+  async function teslaCommand(index, on) {
+    const car = S.tesla.cars[index];
+    if (!car || !H.live || !car.climate) return;
+    const jobs = on
+      ? [['climate', 'set_hvac_mode', car.climate, { hvac_mode: 'heat_cool' }], ['climate', 'turn_on', car.climate, {}], ...(car.defrost ? [[domainOf(car.defrost), 'turn_on', car.defrost, {}]] : [])]
+      : [...(car.defrost ? [[domainOf(car.defrost), 'turn_off', car.defrost, {}]] : []), ['climate', 'set_hvac_mode', car.climate, { hvac_mode: 'off' }], ['climate', 'turn_off', car.climate, {}]];
+    let ok = false;
+    for (const [domain, service, id, data] of jobs) { if (await callQuiet(domain, service, id, data)) ok = true; }
+    if (!ok) toast(`Couldn’t reach ${car.name}. Check the Home Assistant connection.`);
   }
 
   const entityName = (id) => H.states[id]?.attributes?.friendly_name || id;
@@ -1943,13 +2053,36 @@
       <div class="count-body"><div class="count-num num${v.word ? ' is-word' : ''}">${esc(v.number)}</div>${v.unit ? `<div class="count-unit">${esc(v.unit)}</div>` : ''}</div></section>`;
   }
 
+  const TESLA_SILHOUETTE = '<svg viewBox="0 0 120 48" aria-hidden="true"><path fill="currentColor" d="M18 30h10a7 7 0 0 0 14 0h28a7 7 0 0 0 14 0h16c3 0 6-2 7-5l3-8c1-3-1-5-4-5H70L58 8c-2-1-4-1-6 0L34 12H18c-4 0-8 3-8 7v4c0 4 4 7 8 7z"/><circle cx="32" cy="32" r="4" fill="var(--glass-strong)"/><circle cx="84" cy="32" r="4" fill="var(--glass-strong)"/></svg>';
+  function teslaSensorIds(kind, current) {
+    const match = (id, re) => re.test(id) || re.test(entityName(id));
+    let ids = [];
+    if (kind === 'climate') ids = idsOf('climate');
+    else if (kind === 'inside') ids = idsOf('sensor').filter((id) => H.states[id].attributes.device_class === 'temperature' || /°|º/.test(String(H.states[id].attributes.unit_of_measurement || '')) || match(id, /temp|cabin|inside|interior|climate/i));
+    else if (kind === 'battery') ids = idsOf('sensor').filter((id) => H.states[id].attributes.device_class === 'battery' || H.states[id].attributes.unit_of_measurement === '%' || match(id, /battery|charge/i));
+    else ids = idsOf('switch', 'input_boolean');
+    if (current && !ids.includes(current)) ids = [current, ...ids];
+    return ids;
+  }
+  function wTesla() {
+    const cards = S.tesla.cars.map((car, i) => {
+      const view = teslaCarView(car, H.live, H.states);
+      const cls = view.defrosting ? 'is-defrost' : view.warming ? 'is-warm' : view.connected ? 'is-off' : 'is-down';
+      const photo = teslaPhotos[i] ? `<img src="${teslaPhotos[i]}" alt="">` : TESLA_SILHOUETTE;
+      const stats = [view.inside && `${view.inside} inside`, view.battery && `${view.battery} battery`].filter(Boolean).join(' · ');
+      const dis = view.connected ? '' : ' disabled';
+      return `<article class="tesla-card ${cls}"><div class="tesla-photo">${photo}</div><div class="tesla-name">${esc(car.name)}</div><div class="tesla-label" aria-live="polite">${esc(view.label)}</div>${stats ? `<div class="tesla-stats">${esc(stats)}</div>` : ''}<div class="tesla-actions"><button type="button" class="qbtn primary" data-act="tesla-warm" data-car="${i}" aria-pressed="${view.warming || view.defrosting}" aria-label="Warm up ${esc(car.name)}"${dis}>Warm up</button><button type="button" class="qbtn" data-act="tesla-off" data-car="${i}" aria-pressed="${view.connected && !view.warming && !view.defrosting}" aria-label="Turn off ${esc(car.name)}"${dis}>Off</button></div></article>`;
+    }).join('');
+    return `<section class="${wcls(TESLA_LAYOUT_ID)}" aria-label="Tesla">${whead('car', 'Tesla', '<button type="button" class="w-link" data-act="open" data-app="settings" data-stab="screen">Settings</button>')}<div class="tesla-cards">${cards}</div></section>`;
+  }
+
   function wEv() {
     const list = (FEED.data.ev || []).slice(0, 3);
     const body = list.length ? list.map((x) => `<div class="li sb"><span class="k clamp1">${esc(x.site || 'Site')}</span><span class="pill ${evStage(x)}">${esc(x.status || '')}</span></div>`).join('') : '<div class="muted">No EV projects in the feed.</div>';
     return `<section class="${wcls('ev')}" aria-label="EV projects">${whead('bolt', 'EV Projects', sampleTag(FEED.part.ev))}<div class="w-body">${body}</div></section>`;
   }
 
-  const RENDER = { time: wTime, status: wStatus, next: wNext, home: wHome, tasks: wTasks, cam: wCam, kitchen: wKitchen, media: wMedia, board: wBoard, energy: wEnergy, packages: wPackages, emergency: wEmergency, forecast: wForecast, timer: wTimer, bnb: wBnb, count: wCount, ev: wEv };
+  const RENDER = { time: wTime, status: wStatus, next: wNext, home: wHome, tasks: wTasks, cam: wCam, kitchen: wKitchen, media: wMedia, board: wBoard, energy: wEnergy, packages: wPackages, emergency: wEmergency, forecast: wForecast, timer: wTimer, bnb: wBnb, count: wCount, ev: wEv, tesla: wTesla };
 
   function renderHome() {
     const key = privateOK() ? 'main' : 'guest';
@@ -2445,6 +2578,20 @@
       <p class="help">A small script in your Google account reads your Google calendars and Airbnb calendar links and sends them here, so your private links never go to GitHub. Setup takes about 10 minutes: follow “Google Calendar and Airbnb” in the <a href="https://github.com/alleebauder/Home-run-simpson#google-calendar-and-airbnb" target="_blank" rel="noopener">README</a>. The same feed can also carry EV project data. It refreshes every 5 minutes.</p>`;
   }
 
+  function teslaSettingsHTML() {
+    const blanks = { climate: 'Choose the climate entity', inside: 'Inside temperature, optional', battery: 'Battery level, optional', defrost: 'Defrost or precondition switch, optional' };
+    const cars = S.tesla.cars.map((car, i) => {
+      const photo = teslaPhotos[i] ? `<img src="${teslaPhotos[i]}" alt="">` : TESLA_SILHOUETTE;
+      const field = (key) => `<label class="field"><span>${key === 'climate' ? 'Climate' : key === 'inside' ? 'Inside temperature' : key === 'battery' ? 'Battery' : 'Defrost or precondition'}</span>${sel(`${i}-${key}`, entityOpts(teslaSensorIds(key, car[key]), blanks[key]), car[key], 'data-tesla')}</label>`;
+      return `<div class="panel tesla-setup"><div class="tesla-setup-h"><div class="tesla-photo sm">${photo}</div><label class="field"><span>Name</span><input type="text" data-tesla="${i}-name" maxlength="40" value="${esc(car.name)}" autocomplete="off"></label></div>
+        <div class="quick"><label class="qbtn file-btn">${icon('photo')} Choose photo<input type="file" data-tesla-photo="${i}" accept="image/*"></label>${teslaPhotos[i] ? `<button type="button" class="qbtn" data-act="tesla-photo-clear" data-car="${i}">Remove photo</button>` : ''}</div>
+        <div class="row2">${field('climate')}${field('inside')}${field('battery')}${field('defrost')}</div></div>`;
+    }).join('');
+    return `<div class="section-title">Tesla</div>
+      <p class="help">Two cars, each with its own photo and name. Photos stay on this iPad. Pick the climate entity from Home Assistant, plus the inside temperature, battery, and a defrost or preconditioning switch if you have them. Warm up sends heat/cool and turns that switch on. The cards say Not connected until Home Assistant is connected and a climate entity is chosen. Setup steps are in the README.</p>
+      ${cars}`;
+  }
+
   function setScreen() {
     const key = APP.layoutKey;
     const list = S.layout[key];
@@ -2459,6 +2606,7 @@
       <div class="row2"><label class="field"><span>Label</span><input type="text" id="s-countdownLabel" data-set="countdownLabel" maxlength="60" value="${esc(S.countdownLabel)}" autocomplete="off"></label>
         <label class="field"><span>Date</span><input type="date" id="s-countdownDate" data-set="countdownDate" value="${esc(S.countdownDate)}"></label></div>
       <p class="help">The Countdown widget counts calendar days until this date in Pacific time. On the day it says Today. After that it counts the days since. The date and label stay on this iPad.</p>
+      ${teslaSettingsHTML()}
       <div class="section-title">Clock face and photo frame</div>
       <div class="row2"><label class="field"><span>Show the clock after</span>${sel('idleAfter', [[30, '30 seconds'], [60, '1 minute'], [120, '2 minutes'], [300, '5 minutes'], [600, '10 minutes'], [0, 'Never']], S.idleAfter)}</label>
         <label class="field"><span>Face</span>${sel('face', [['bold', 'Bold'], ['analog', 'Analog'], ['photos', 'Photo frame'], ['glance', 'Glance']], S.face)}</label></div>
@@ -2618,6 +2766,7 @@
     const countdown = cleanCountdownSettings(S.countdownDate, S.countdownLabel);
     S.countdownDate = countdown.date;
     S.countdownLabel = countdown.label;
+    S.tesla = { cars: cleanTeslaCars(S.tesla && S.tesla.cars) };
     if (st.calendarOwners && typeof st.calendarOwners === 'object') Object.entries(st.calendarOwners).forEach(([cal, who]) => { const id = idOf(who); if (id) S.calendarOwners[cal] = id; });
     if (st.profile) { const id = /^guest$/i.test(st.profile) ? (S.people.find((p) => p.fixed) || {}).id : idOf(st.profile); if (id) S.profile = id; }
     if (!personById(S.profile)) S.profile = (members()[0] || S.people[0]).id;
@@ -3153,6 +3302,14 @@
       mergeCalendar();
       renderAll();
     },
+    'tesla-warm': (el) => teslaCommand(+el.dataset.car, true),
+    'tesla-off': (el) => teslaCommand(+el.dataset.car, false),
+    'tesla-photo-clear': (el) => {
+      teslaPhotos[+el.dataset.car] = null;
+      saveTeslaPhotos();
+      renderHome();
+      if (APP.name === 'settings') renderApp();
+    },
     'feed-refresh': () => { if (!S.feedUrl) { toast('Add the feed address in Settings → Connections first.'); return; } toast('Refreshing…'); loadFeed(true); },
     'feed-save': () => { S.feedUrl = ($('#feed-url')?.value || '').trim(); saveSettings(); loadFeed(); toast(S.feedUrl ? 'Refreshing the feed…' : 'Feed removed. Showing sample data.'); },
     reset: () => {
@@ -3222,6 +3379,43 @@
     if (d.modeFlag) { const [mid, f] = d.modeFlag.split('|'); S.modes[mid][f] = t.checked; saveSettings(); renderApp(); return; }
     if (d.modeTemp) { const v = t.value.trim(); S.modes[d.modeTemp].temp = v === '' ? '' : clamp(+v, 45, 90); saveSettings(); renderApp(); return; }
     if (d.modeAfter) { S.modes[d.modeAfter].after = t.value; saveSettings(); renderApp(); return; }
+    if (d.teslaPhoto != null) {
+      const index = +d.teslaPhoto;
+      const file = t.files && t.files[0];
+      t.value = '';
+      if (!file || !/^image\//.test(file.type)) { toast('Choose a picture.'); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const max = 960;
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          teslaPhotos[index] = canvas.toDataURL('image/jpeg', 0.82);
+          saveTeslaPhotos();
+          renderHome();
+          if (APP.name === 'settings') renderApp();
+        };
+        img.onerror = () => toast('That picture couldn’t be read.');
+        img.src = String(reader.result || '');
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    if (d.tesla) {
+      const m = /^(\d)-(name|climate|inside|battery|defrost)$/.exec(d.tesla);
+      if (!m) return;
+      const car = S.tesla.cars[+m[1]];
+      if (!car) return;
+      car[m[2]] = t.value;
+      S.tesla.cars = cleanTeslaCars(S.tesla.cars);
+      saveSettings();
+      renderHome();
+      return;
+    }
     if (d.mealLevel != null && d.mealDay) {
       const iso = d.mealDay;
       const level = +d.mealLevel;
