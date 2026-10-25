@@ -348,13 +348,12 @@ div.tile-main { cursor: default; }
 .pill.crit { color: var(--crit); }
 .pill.good::before, .pill.warn::before, .pill.crit::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
-/* Inspections ring */
-.ring-wrap { flex: 1; display: flex; align-items: center; gap: 12px; min-height: 0; }
-.ring { width: 74px; height: 74px; flex: none; }
-.ring circle { fill: none; stroke-width: 10; }
-.ring .track { stroke: var(--hair); }
-.ring .val { stroke: var(--accent); stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
-.ring text { fill: var(--fg); font: 700 20px var(--font-round); }
+/* Countdown */
+.w-count .w-head .clamp1 { flex: 1; }
+.w-count .count-body { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+.w-count .count-num { font: 700 clamp(36px, 4.6vw, 52px)/1 var(--font-round); letter-spacing: -.04em; color: var(--fg); }
+.w-count .count-num.is-word { font-size: clamp(30px, 3.6vw, 40px); letter-spacing: -.03em; }
+.w-count .count-unit { margin-top: 2px; font-size: 14px; font-weight: 650; color: var(--fg-dim); }
 
 /* Forecast */
 .fc { display: grid; grid-template-columns: 1fr auto auto; gap: 6px 12px; align-items: center; }

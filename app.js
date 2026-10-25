@@ -26,6 +26,63 @@
     clear() { try { Object.keys(localStorage).filter((k) => k.startsWith('bh.')).forEach((k) => localStorage.removeItem(k)); } catch (e) { /* blocked */ } },
   };
 
+  /* COUNTDOWN_FNS */
+  const COUNTDOWN_ZONE = 'America/Los_Angeles';
+  const COUNTDOWN_DEFAULT_DATE = '2027-06-01';
+  const COUNTDOWN_DEFAULT_LABEL = 'June 1, 2027';
+  const COUNTDOWN_LAYOUT_ID = 'count';
+  // Home screens saved before this widget used insp for that square.
+  const LEGACY_LAYOUT_IDS = { insp: 'count' };
+
+  function zoneYMD(date, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+    const get = (type) => parts.find((p) => p.type === type).value;
+    return `${get('year')}-${get('month')}-${get('day')}`;
+  }
+  function isCalendarDate(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+    if (!m) return false;
+    const y = +m[1], mo = +m[2], d = +m[3];
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+  }
+  function daysUntilDate(targetISO, now, timeZone) {
+    const target = isCalendarDate(targetISO) ? String(targetISO) : COUNTDOWN_DEFAULT_DATE;
+    const today = zoneYMD(now, timeZone);
+    const utc = (iso) => { const [y, m, d] = iso.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+    return Math.round((utc(target) - utc(today)) / 86400000);
+  }
+  function cleanCountdownSettings(date, label) {
+    const text = String(label ?? '').trim().slice(0, 60);
+    return { date: isCalendarDate(date) ? String(date) : COUNTDOWN_DEFAULT_DATE, label: text || COUNTDOWN_DEFAULT_LABEL };
+  }
+  function countdownView(targetISO, label, now) {
+    const clean = cleanCountdownSettings(targetISO, label);
+    const days = daysUntilDate(clean.date, now || new Date(), COUNTDOWN_ZONE);
+    let number, unit;
+    if (days > 1) { number = String(days); unit = 'days'; }
+    else if (days === 1) { number = '1'; unit = 'day'; }
+    else if (days === 0) { number = 'Today'; unit = ''; }
+    else if (days === -1) { number = '1'; unit = 'day ago'; }
+    else { number = String(-days); unit = 'days ago'; }
+    return { days, number, unit, label: clean.label, date: clean.date, word: days === 0 };
+  }
+  function normalizeLayoutIds(list, known, dropPrivate) {
+    if (!Array.isArray(list)) return null;
+    const seen = new Set();
+    const out = [];
+    for (const raw of list) {
+      const id = LEGACY_LAYOUT_IDS[raw] || raw;
+      const info = known[id];
+      if (!info || seen.has(id)) continue;
+      if (dropPrivate && info.private) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
+  }
+  /* /COUNTDOWN_FNS */
+
   // ================================================================== icons
   const ICON = {
     bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2V16h5v-.2c.1-.8.5-1.5 1.1-2A6 6 0 0 0 12 3z"/>',
@@ -53,7 +110,6 @@
     photo: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>',
     key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/>',
-    clip: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11l2 2 4-4M9 17h6"/>',
     bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
     moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z"/>',
@@ -128,14 +184,20 @@
     forecast: ['Forecast', 'tall'],
     timer: ['Timers', 'small'],
     bnb: ['Airbnb & cleaning', 'tall', true],
-    insp: ['Inspections', 'small', true],
+    count: ['Countdown', 'small'],
     ev: ['EV projects', 'small', true],
   };
   const SIZE_LABEL = { small: '1×1', wide: '2×1', tall: '1×2', large: '2×2' };
   const DEFAULT_LAYOUT = {
-    main: ['time', 'status', 'next', 'home', 'tasks', 'cam', 'kitchen', 'media', 'board', 'energy', 'packages', 'emergency', 'bnb', 'insp', 'ev'],
+    main: ['time', 'status', 'next', 'home', 'tasks', 'cam', 'kitchen', 'media', 'board', 'energy', 'packages', 'emergency', 'bnb', 'count', 'ev'],
     guest: ['time', 'status', 'emergency', 'home', 'kitchen', 'media', 'forecast', 'timer'],
   };
+  function layoutList(list, key, dropPrivate) {
+    const known = {};
+    Object.keys(WIDGET_INFO).forEach((id) => { known[id] = { private: !!WIDGET_INFO[id][2] }; });
+    const mapped = normalizeLayoutIds(list, known, dropPrivate);
+    return mapped == null ? clone(DEFAULT_LAYOUT[key]) : mapped;
+  }
 
   const APP_TITLES = { home: 'Home', cal: 'Calendar', tasks: 'Tasks', airbnb: 'Airbnb', kitchen: 'Kitchen', music: 'Music', security: 'Security', board: 'Message Board', packages: 'Packages', energy: 'Energy', photos: 'Photos', emergency: 'Emergency', settings: 'Settings', assist: 'Assistant' };
   const APP_ICONS = { home: 'home', cal: 'cal', tasks: 'check', airbnb: 'key', kitchen: 'pot', music: 'music', security: 'shield', board: 'msg', packages: 'box', energy: 'bolt', photos: 'photo', emergency: 'sos', settings: 'gear', assist: 'sparkle' };
@@ -159,6 +221,8 @@
     lat: 47.6732,
     lon: -117.2394,
     feedUrl: '',
+    countdownDate: COUNTDOWN_DEFAULT_DATE,
+    countdownLabel: COUNTDOWN_DEFAULT_LABEL,
     cleanOnCal: true,
     idleAfter: 120,
     face: 'bold',
@@ -198,7 +262,10 @@
       else s[k] = sv;
     });
     Object.keys(DEFAULT_MODES).forEach((id) => { s.modes[id] = { ...DEFAULT_MODES[id], ...((saved.modes || {})[id] || {}) }; });
-    ['main', 'guest'].forEach((k) => { s.layout[k] = Array.isArray(s.layout[k]) ? s.layout[k].filter((w) => WIDGET_INFO[w]) : clone(DEFAULT_LAYOUT[k]); });
+    ['main', 'guest'].forEach((k) => { s.layout[k] = layoutList(s.layout[k], k, false); });
+    const countdown = cleanCountdownSettings(s.countdownDate, s.countdownLabel);
+    s.countdownDate = countdown.date;
+    s.countdownLabel = countdown.label;
     if (!s.people.some((p) => p.fixed)) s.people.push(clone(DEFAULTS.people[2]));
     return s;
   }
@@ -341,7 +408,6 @@
         { name: 'Broadway A', checkin: '15:00', checkout: '10:00', stays: [{ start: isoDay(-1), end: isoDay(2), phone4: '0581' }, { start: isoDay(5), end: isoDay(7), phone4: '3302' }] },
         { name: 'Broadway B', checkin: '16:00', checkout: '11:00', stays: [{ start: isoDay(1), end: isoDay(4), phone4: '9124' }, { start: isoDay(4), end: isoDay(8), phone4: '6650' }] },
       ],
-      inspections: { completed: 186, goal: 300, scheduled: [{ date: isoDay(1), time: '9:30 AM', name: 'Annual inspection' }, { date: isoDay(2), time: '1:00 PM', name: 'Re-inspection' }] },
       ev: [{ site: 'Site A', status: 'Permit approved' }, { site: 'Site B', status: 'In plan review' }, { site: 'Site C', status: 'Utility design' }],
       events: [],
       calendars: [],
@@ -850,23 +916,22 @@
   }
 
   // ============================================================ Bauder HQ
-  const ALL_SAMPLE = () => ({ listings: true, insp: true, ev: true, events: true });
+  const ALL_SAMPLE = () => ({ listings: true, ev: true, events: true });
   const FEED = { data: sampleFeed(), sample: true, part: ALL_SAMPLE(), note: '', updated: 0 };
   function normalizeFeed(j) {
     if (!j || typeof j !== 'object') throw new Error('The feed didn’t send data');
     if (j.error) throw new Error(String(j.error));
     const s = sampleFeed();
-    const hasL = Array.isArray(j.listings), hasI = !!(j.inspections && typeof j.inspections === 'object'), hasE = Array.isArray(j.ev), hasC = Array.isArray(j.events);
+    const hasL = Array.isArray(j.listings), hasE = Array.isArray(j.ev), hasC = Array.isArray(j.events);
     return {
       data: {
         listings: hasL ? j.listings : s.listings,
-        inspections: hasI ? j.inspections : s.inspections,
         ev: hasE ? j.ev : s.ev,
         events: hasC ? j.events : [],
         calendars: Array.isArray(j.calendars) ? j.calendars : [],
         errors: Array.isArray(j.errors) ? j.errors : [],
       },
-      part: { listings: !hasL, insp: !hasI, ev: !hasE, events: !hasC },
+      part: { listings: !hasL, ev: !hasE, events: !hasC },
     };
   }
   async function loadFeed(fresh) {
@@ -892,7 +957,7 @@
   }
   function feedStatusText() {
     if (FEED.note) return FEED.note;
-    if (FEED.sample) return 'No feed set. Airbnb, Inspections and EV widgets show sample data.';
+    if (FEED.sample) return 'No feed set. Airbnb and EV widgets show sample data.';
     const d = FEED.data, parts = [];
     if (!FEED.part.events) parts.push(`${plural(d.calendars.length, 'Google calendar')} with ${plural(d.events.length, 'event')}`);
     if (!FEED.part.listings) parts.push(d.listings.map((l) => `${l.name}: ${l.error ? 'error' : plural((l.stays || []).length, 'stay')}`).join(', '));
@@ -1782,17 +1847,12 @@
       <div class="sub-label" style="margin-top:4px">Listings</div>${status}</div></section>`;
   }
 
-  function wInsp() {
-    const i = FEED.data.inspections || {};
-    const done = +i.completed || 0, goal = +i.goal || 0;
-    const pct = goal ? clamp(done / goal, 0, 1) : 0;
-    const C = 2 * Math.PI * 40;
-    const now = new Date();
-    const weeks = Math.max(1, Math.ceil((new Date(now.getFullYear(), 11, 31) - now) / (7 * 86400000)));
-    const left = Math.max(0, goal - done);
-    return `<section class="${wcls('insp')}" aria-label="Inspections">${whead('clip', 'Inspections', sampleTag(FEED.part.insp))}
-      <div class="ring-wrap"><svg class="ring" viewBox="0 0 100 100" role="img" aria-label="${Math.round(pct * 100)} percent of goal"><circle class="track" cx="50" cy="50" r="40"/><circle class="val" cx="50" cy="50" r="40" stroke-dasharray="${(pct * C).toFixed(1)} ${C.toFixed(1)}"/><text x="50" y="57" text-anchor="middle">${Math.round(pct * 100)}%</text></svg>
-      <div style="min-width:0"><div class="big num">${done}</div><div class="muted" style="font-size:13px">of ${goal} this year</div><div class="faint" style="font-size:12.5px">${left ? `${Math.ceil(left / weeks)} a week to finish` : 'Goal met'}</div></div></div></section>`;
+  function wCount() {
+    const v = countdownView(S.countdownDate, S.countdownLabel, new Date());
+    const spoken = v.days === 0 ? 'today' : `${v.number} ${v.unit}`;
+    return `<section class="${wcls(COUNTDOWN_LAYOUT_ID)}" aria-label="${esc(`Countdown, ${v.label}, ${spoken}`)}">
+      <div class="w-head">${icon('cal')}<span class="clamp1">${esc(v.label)}</span></div>
+      <div class="count-body"><div class="count-num num${v.word ? ' is-word' : ''}">${esc(v.number)}</div>${v.unit ? `<div class="count-unit">${esc(v.unit)}</div>` : ''}</div></section>`;
   }
 
   function wEv() {
@@ -1801,7 +1861,7 @@
     return `<section class="${wcls('ev')}" aria-label="EV projects">${whead('bolt', 'EV Projects', sampleTag(FEED.part.ev))}<div class="w-body">${body}</div></section>`;
   }
 
-  const RENDER = { time: wTime, status: wStatus, next: wNext, home: wHome, tasks: wTasks, cam: wCam, kitchen: wKitchen, media: wMedia, board: wBoard, energy: wEnergy, packages: wPackages, emergency: wEmergency, forecast: wForecast, timer: wTimer, bnb: wBnb, insp: wInsp, ev: wEv };
+  const RENDER = { time: wTime, status: wStatus, next: wNext, home: wHome, tasks: wTasks, cam: wCam, kitchen: wKitchen, media: wMedia, board: wBoard, energy: wEnergy, packages: wPackages, emergency: wEmergency, forecast: wForecast, timer: wTimer, bnb: wBnb, count: wCount, ev: wEv };
 
   function renderHome() {
     const key = privateOK() ? 'main' : 'guest';
@@ -2249,7 +2309,7 @@
       <div class="quick"><button type="button" class="qbtn primary" data-act="feed-save">Save and refresh</button>${S.feedUrl ? '<button type="button" class="qbtn" data-act="feed-refresh">Refresh now</button>' : ''}</div>
       <p class="help" id="feed-status">${esc(feedStatusText())}</p>
       <label class="check"><input type="checkbox" id="s-cleanOnCal" data-set="cleanOnCal" ${S.cleanOnCal ? 'checked' : ''}><span>Show Airbnb cleanings on the family calendar</span></label>
-      <p class="help">A small script in your Google account reads your Google calendars and Airbnb calendar links and sends them here, so your private links never go to GitHub. Setup takes about 10 minutes: follow “Google Calendar and Airbnb” in the <a href="https://github.com/alleebauder/Home-run-simpson#google-calendar-and-airbnb" target="_blank" rel="noopener">README</a>. The same feed can also carry Inspections and EV project data. It refreshes every 5 minutes.</p>`;
+      <p class="help">A small script in your Google account reads your Google calendars and Airbnb calendar links and sends them here, so your private links never go to GitHub. Setup takes about 10 minutes: follow “Google Calendar and Airbnb” in the <a href="https://github.com/alleebauder/Home-run-simpson#google-calendar-and-airbnb" target="_blank" rel="noopener">README</a>. The same feed can also carry EV project data. It refreshes every 5 minutes.</p>`;
   }
 
   function setScreen() {
@@ -2262,6 +2322,10 @@
       <p class="help">The first screen fits 12 squares: 4 across and 3 down. Widgets past that scroll. ${key === 'guest' ? 'Private widgets can’t be added to the Guest screen.' : ''}</p>
       <div class="panel" style="padding-block:4px">${list.map((id, i) => `<div class="ed-row"><span class="nm">${esc(WIDGET_INFO[id][0])}</span><span class="sz">${SIZE_LABEL[WIDGET_INFO[id][1]]}${WIDGET_INFO[id][2] ? ' · private' : ''}</span><button type="button" class="icon-btn" data-act="layout-move" data-i="${i}" data-dir="-1" aria-label="Move ${esc(WIDGET_INFO[id][0])} up" ${i === 0 ? 'disabled' : ''}>${icon('up')}</button><button type="button" class="icon-btn" data-act="layout-move" data-i="${i}" data-dir="1" aria-label="Move ${esc(WIDGET_INFO[id][0])} down" ${i === list.length - 1 ? 'disabled' : ''}>${icon('down')}</button><button type="button" class="icon-btn" data-act="layout-del" data-i="${i}" aria-label="Remove ${esc(WIDGET_INFO[id][0])}">${icon('x')}</button></div>`).join('') || '<div class="empty">No widgets.</div>'}</div>
       <div class="addrow">${avail.length ? `<select class="inline-input" id="layout-add">${avail.map((id) => `<option value="${id}">${esc(WIDGET_INFO[id][0])} (${SIZE_LABEL[WIDGET_INFO[id][1]]})</option>`).join('')}</select><button type="button" class="qbtn primary" data-act="layout-add">${icon('plus')}Add widget</button>` : ''}<button type="button" class="qbtn" data-act="layout-reset">Reset to default</button></div>
+      <div class="section-title">Countdown</div>
+      <div class="row2"><label class="field"><span>Label</span><input type="text" id="s-countdownLabel" data-set="countdownLabel" maxlength="60" value="${esc(S.countdownLabel)}" autocomplete="off"></label>
+        <label class="field"><span>Date</span><input type="date" id="s-countdownDate" data-set="countdownDate" value="${esc(S.countdownDate)}"></label></div>
+      <p class="help">The Countdown widget counts calendar days until this date in Pacific time. On the day it says Today. After that it counts the days since. The date and label stay on this iPad.</p>
       <div class="section-title">Clock face and photo frame</div>
       <div class="row2"><label class="field"><span>Show the clock after</span>${sel('idleAfter', [[30, '30 seconds'], [60, '1 minute'], [120, '2 minutes'], [300, '5 minutes'], [600, '10 minutes'], [0, 'Never']], S.idleAfter)}</label>
         <label class="field"><span>Face</span>${sel('face', [['bold', 'Bold'], ['analog', 'Analog'], ['photos', 'Photo frame'], ['glance', 'Glance']], S.face)}</label></div>
@@ -2417,7 +2481,10 @@
       else if (typeof v === typeof dv || (Array.isArray(dv) && Array.isArray(v))) S[k] = v;
     });
     if (st.modes && typeof st.modes === 'object') Object.keys(DEFAULT_MODES).forEach((id) => { if (st.modes[id] && typeof st.modes[id] === 'object') S.modes[id] = { ...S.modes[id], ...st.modes[id] }; });
-    if (st.layout && typeof st.layout === 'object') ['main', 'guest'].forEach((k) => { if (Array.isArray(st.layout[k])) S.layout[k] = st.layout[k].filter((w) => WIDGET_INFO[w] && (k === 'main' || !WIDGET_INFO[w][2])); });
+    if (st.layout && typeof st.layout === 'object') ['main', 'guest'].forEach((k) => { if (Array.isArray(st.layout[k])) S.layout[k] = layoutList(st.layout[k], k, k === 'guest'); });
+    const countdown = cleanCountdownSettings(S.countdownDate, S.countdownLabel);
+    S.countdownDate = countdown.date;
+    S.countdownLabel = countdown.label;
     if (st.calendarOwners && typeof st.calendarOwners === 'object') Object.entries(st.calendarOwners).forEach(([cal, who]) => { const id = idOf(who); if (id) S.calendarOwners[cal] = id; });
     if (st.profile) { const id = /^guest$/i.test(st.profile) ? (S.people.find((p) => p.fixed) || {}).id : idOf(st.profile); if (id) S.profile = id; }
     if (!personById(S.profile)) S.profile = (members()[0] || S.people[0]).id;
@@ -2989,6 +3056,14 @@
     if (d.emc) { const c = EMERG.contacts.find((x) => x.id === d.emc); if (c) { c[d.f] = t.value.trim(); saveEmerg(); } return; }
     if (d.set) {
       const k = d.set;
+      if (k === 'countdownDate' || k === 'countdownLabel') {
+        const next = cleanCountdownSettings(k === 'countdownDate' ? t.value : S.countdownDate, k === 'countdownLabel' ? t.value : S.countdownLabel);
+        S.countdownDate = next.date;
+        S.countdownLabel = next.label;
+        saveSettings();
+        renderAll();
+        return;
+      }
       let v = t.type === 'checkbox' ? t.checked : t.value;
       if (['lat', 'lon', 'idleAfter', 'nightStart', 'nightEnd'].includes(k)) v = parseFloat(v);
       if ((k === 'lat' || k === 'lon') && !Number.isFinite(v)) return;

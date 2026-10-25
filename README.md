@@ -37,6 +37,8 @@ It's a web app that runs on iPadOS, not a replacement operating system. There's 
 
 The home screen is a widget gallery. In **Settings → Home screen** you choose and order widgets separately for the family screen and the guest screen. The first screen holds 12 squares (4 across, 3 down) and the rest scroll.
 
+**Countdown** (layout id `count`) is one of those widgets. It shows how many days remain until a date, counted in Pacific time. The default is June 1, 2027, with the label “June 1, 2027”. Change the date and the label in **Settings → Home screen**. On the day itself it says Today, and after that it counts the days since. The date and label stay on the iPad. A home screen that still has the old Inspections square shows the countdown in that same spot.
+
 ## Feasibility notes
 
 - **HomeKit / Apple Home.** A web app can't talk to HomeKit directly. Home Assistant can: its HomeKit Device integration pulls in HomeKit-compatible devices, and its HomeKit Bridge exposes Home Assistant devices back to Apple Home. Matter and Thread devices work through Home Assistant too.
@@ -120,14 +122,13 @@ The status line under the address shows how many calendars, events and stays loa
 If you change the script later: **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy**. The URL stays the same.
 
 ### Feed format
-The script sends this JSON. Anything missing stays as sample data in the app, so you can also add `inspections` and `ev` later (from the script, a Google Sheet, or a file on the Umbrel). A full example is in `umbrel/bauder-hq.sample.json`.
+The script sends this JSON. Anything missing stays as sample data in the app, so you can also add `ev` later (from the script, a Google Sheet, or a file on the Umbrel). A full example is in `umbrel/bauder-hq.sample.json`. The countdown is not part of this feed.
 
 ```json
 {
   "calendars": [{ "name": "Family", "color": "#33b679" }],
   "events": [{ "cal": "Family", "title": "Church", "allDay": false, "start": "2026-10-26T16:30:00.000Z", "end": "2026-10-26T18:00:00.000Z", "location": "" }],
   "listings": [{ "name": "Wall St", "checkin": "16:00", "checkout": "11:00", "stays": [{ "start": "2026-10-25", "end": "2026-10-28", "phone4": "2290" }] }],
-  "inspections": { "completed": 186, "goal": 300, "scheduled": [{ "date": "2026-10-26", "time": "9:30 AM", "name": "Annual inspection" }] },
   "ev": [{ "site": "Site A", "status": "Permit approved" }],
   "errors": []
 }
