@@ -1157,7 +1157,10 @@
     const m = MEALS[iso];
     if (!m) return '';
     const r = recipes.find((x) => x.id === m.recipe);
-    return [m.text, r ? r.title : ''].filter(Boolean).join(' with ');
+    const text = String(m.text || '').trim();
+    if (!r) return text;
+    if (!text || text.toLowerCase() === r.title.toLowerCase() || r.title.toLowerCase().includes(text.toLowerCase())) return r.title;
+    return `${text} with ${r.title}`;
   }
 
   // ================================================================ photos
@@ -2223,9 +2226,9 @@
   const entityOpts = (ids, blank) => [['', blank], ...ids.map((id) => [id, entityName(id)])];
 
   function appSettings() {
-    const tabs = [['connect', 'Connections'], ['screen', 'Home screen'], ['modes', 'Modes'], ['family', 'Family'], ['devices', 'Devices'], ['setup', 'iPad setup']];
+    const tabs = [['connect', 'Connections'], ['screen', 'Home screen'], ['modes', 'Modes'], ['family', 'Family'], ['devices', 'Devices'], ['backup', 'Backup & setup'], ['setup', 'iPad setup']];
     const seg = `<div class="seg" role="group" aria-label="Settings sections">${tabs.map(([k, v]) => `<button type="button" data-act="s-tab" data-tab="${k}" aria-pressed="${APP.stab === k}">${v}</button>`).join('')}</div>`;
-    const body = { connect: setConnect, screen: setScreen, modes: setModes, family: setFamily, devices: setDevices, setup: setSetup }[APP.stab] || setConnect;
+    const body = { connect: setConnect, screen: setScreen, modes: setModes, family: setFamily, devices: setDevices, backup: setBackup, setup: setSetup }[APP.stab] || setConnect;
     return `${seg}<div class="form">${body()}</div>`;
   }
 
@@ -2352,6 +2355,119 @@
       <div class="row2"><label class="field"><span>Whole-home power (W)</span>${sel('energy.power', entityOpts(powers, 'Find it automatically'), S.energy.power, 'data-energy')}</label><label class="field"><span>Energy today (kWh)</span>${sel('energy.energy', entityOpts(energies, 'Find it automatically'), S.energy.energy, 'data-energy')}</label></div>
       <div class="section-title">Arrivals</div>
       ${persons.length ? `<p class="help">Runs while this app is open on the iPad. For routines that always run, build them as automations in Home Assistant.</p><div class="panel" style="padding-block:4px">${persons.map((p) => `<div class="ed-row"><span class="nm">When ${esc(entityName(p))} gets home</span>${sel('arr-' + p, modeOpts, S.arrivals[p] || '', 'data-arrival')}</div>`).join('')}<div class="ed-row"><span class="nm">When everyone has left</span>${sel('awayMode', modeOpts, S.awayMode)}</div></div>` : '<p class="help">Add people with the Home Assistant phone app so it knows who’s home, then choose what happens when they arrive.</p>'}`;
+  }
+
+  function setBackup() {
+    return `<div class="section-title">Import a setup or backup file</div>
+      <p class="help">Paste the text of a Bauder Home setup file, or choose the file, then tap Import. Only the parts in the file change. Everything else stays as it is.</p>
+      <label class="field"><span>Setup file text</span><textarea class="tall mono" id="imp-text" placeholder='{ "bauderHome": 1, "settings": { … } }' autocapitalize="off" autocorrect="off" spellcheck="false"></textarea></label>
+      <div class="quick"><label class="qbtn file-btn">${icon('plus')} Choose file<input type="file" id="imp-file" accept=".json,.txt,application/json,text/plain"></label><button type="button" class="qbtn primary" data-act="import-apply">Import</button></div>
+      <div class="section-title">Back up this iPad</div>
+      <p class="help">Saves people, settings, lists, recipes, meal plan, packages, emergency info and cleaning check-offs, in the same format. Use it before moving to the Umbrel copy, then import it there. Photos aren’t included.</p>
+      <label class="check"><input type="checkbox" id="exp-secrets"><span>Include the Home Assistant token and PIN</span></label>
+      <div class="quick"><button type="button" class="qbtn" data-act="export-copy">Copy backup</button><button type="button" class="qbtn" data-act="export-save">Save backup file</button></div>`;
+  }
+
+  // Everything entered on this iPad, in the setup-file format. People are referred to by name.
+  function exportData(withSecrets) {
+    const nameOf = (id) => pName(id) || '';
+    const settings = clone(S);
+    delete settings.lastMode;
+    if (!withSecrets) { delete settings.haToken; delete settings.pin; }
+    settings.people = S.people.filter((p) => !p.fixed).map((p) => ({ name: p.name, color: p.color, private: !!p.showPrivate, shared: !!p.shared }));
+    settings.profile = curProfile().fixed ? 'Guest' : curProfile().name;
+    settings.calendarOwners = Object.fromEntries(Object.entries(S.calendarOwners).map(([k, v]) => [k, nameOf(v)]).filter(([, v]) => v));
+    const lists = {};
+    ['groceries', 'chores', 'reminders', 'board'].forEach((k) => { lists[k] = (LISTS[k] || []).map((i) => ({ text: i.text, who: nameOf(i.who), due: i.due || '', done: !!i.done })); });
+    const meals = {};
+    Object.entries(MEALS).forEach(([d, m]) => { if (d === '_sample' || !m) return; const r = recipes.find((x) => x.id === m.recipe); meals[d] = { text: m.text || '', recipe: r ? r.title : '' }; });
+    return {
+      bauderHome: 1,
+      exported: new Date().toISOString(),
+      settings,
+      emergency: clone(EMERG),
+      lists,
+      meals,
+      recipes: recipes.filter((r) => !r.sample).map((r) => ({ title: r.title, ingredients: r.ingredients, steps: r.steps })),
+      packages: PKGS.filter((p) => !p.sample).map((p) => ({ label: p.label, number: p.number, carrier: p.carrier, expected: p.expected, delivered: !!p.delivered })),
+      cleaned: CLEANED,
+    };
+  }
+
+  // Applies a setup or backup file. Each section in the file replaces that section here.
+  function importData(o) {
+    if (!o || typeof o !== 'object' || !o.bauderHome) throw new Error('This isn’t a Bauder Home setup or backup file. It needs "bauderHome": 1 at the top.');
+    const done = [];
+    const isDay = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+    const st = o.settings && typeof o.settings === 'object' ? o.settings : {};
+    if (Array.isArray(st.people) && st.people.some((p) => p && p.name)) {
+      const guest = S.people.find((p) => p.fixed) || clone(DEFAULTS.people[2]);
+      S.people = st.people.filter((p) => p && p.name).map((p, i) => {
+        const old = S.people.find((x) => !x.fixed && x.name.toLowerCase() === String(p.name).trim().toLowerCase());
+        const color = /^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : (old ? old.color : PALETTE[i % PALETTE.length][0]);
+        return { id: old ? old.id : 'p' + uid(), name: String(p.name).trim(), color, showPrivate: p.private !== false, shared: !!p.shared };
+      }).concat([guest]);
+      done.push('people');
+    }
+    const idOf = (n) => (n ? nameToId(n) || (personById(n) && !personById(n).fixed ? n : '') : '');
+    Object.keys(st).forEach((k) => {
+      if (['people', 'profile', 'calendarOwners', 'lastMode', 'modes', 'layout'].includes(k) || !(k in DEFAULTS)) return;
+      const dv = DEFAULTS[k], v = st[k];
+      if (dv && typeof dv === 'object' && !Array.isArray(dv)) { if (v && typeof v === 'object' && !Array.isArray(v)) S[k] = { ...S[k], ...v }; }
+      else if (typeof v === typeof dv || (Array.isArray(dv) && Array.isArray(v))) S[k] = v;
+    });
+    if (st.modes && typeof st.modes === 'object') Object.keys(DEFAULT_MODES).forEach((id) => { if (st.modes[id] && typeof st.modes[id] === 'object') S.modes[id] = { ...S.modes[id], ...st.modes[id] }; });
+    if (st.layout && typeof st.layout === 'object') ['main', 'guest'].forEach((k) => { if (Array.isArray(st.layout[k])) S.layout[k] = st.layout[k].filter((w) => WIDGET_INFO[w] && (k === 'main' || !WIDGET_INFO[w][2])); });
+    if (st.calendarOwners && typeof st.calendarOwners === 'object') Object.entries(st.calendarOwners).forEach(([cal, who]) => { const id = idOf(who); if (id) S.calendarOwners[cal] = id; });
+    if (st.profile) { const id = /^guest$/i.test(st.profile) ? (S.people.find((p) => p.fixed) || {}).id : idOf(st.profile); if (id) S.profile = id; }
+    if (!personById(S.profile)) S.profile = (members()[0] || S.people[0]).id;
+    if (!/^(\d{4,8})?$/.test(String(S.pin || ''))) S.pin = '';
+    saveSettings();
+    if (Object.keys(st).some((k) => k !== 'people')) done.push('settings');
+    if (o.emergency && typeof o.emergency === 'object') {
+      const e = o.emergency;
+      Object.keys(defaultEmergency()).forEach((k) => { if (k !== 'contacts' && e[k] != null) EMERG[k] = String(e[k]); });
+      if (Array.isArray(e.contacts)) EMERG.contacts = e.contacts.filter((c) => c && (c.name || c.phone)).map((c) => ({ id: uid(), name: String(c.name || ''), phone: String(c.phone || '') }));
+      saveEmerg();
+      done.push('emergency info');
+    }
+    if (o.lists && typeof o.lists === 'object') {
+      ['groceries', 'chores', 'reminders', 'board'].forEach((k) => {
+        if (!Array.isArray(o.lists[k])) return;
+        LISTS[k] = o.lists[k].map((i) => (typeof i === 'string' ? { text: i } : i)).filter((i) => i && i.text).map((i, n) => ({
+          id: uid(), text: String(i.text), done: !!i.done, who: idOf(i.who), due: isDay(i.due) ? i.due : '', at: Date.now() - n * 60000,
+        }));
+        LISTS._sample[k] = false;
+      });
+      saveLists();
+      done.push('lists');
+    }
+    if (Array.isArray(o.recipes)) {
+      const fresh = o.recipes.filter((r) => r && r.title).map((r) => ({ id: uid(), title: String(r.title), ingredients: (r.ingredients || []).map(String), steps: (r.steps || []).map(String) }));
+      recipes = recipes.filter((r) => !r.sample && !fresh.some((f) => f.title.toLowerCase() === r.title.toLowerCase())).concat(fresh);
+      if (!recipes.length) recipes = [SAMPLE_RECIPE];
+      saveRecipes();
+      done.push('recipes');
+    }
+    if (o.meals && typeof o.meals === 'object') {
+      if (MEALS._sample) Object.keys(MEALS).forEach((k) => delete MEALS[k]);
+      Object.entries(o.meals).forEach(([d, m]) => {
+        if (!isDay(d)) return;
+        if (!m) { delete MEALS[d]; return; }
+        const r = m.recipe ? recipes.find((x) => x.title.toLowerCase() === String(m.recipe).toLowerCase()) : null;
+        MEALS[d] = { text: String(m.text || ''), recipe: r ? r.id : '' };
+      });
+      MEALS._sample = false;
+      saveMeals();
+      done.push('meal plan');
+    }
+    if (Array.isArray(o.packages)) {
+      PKGS = o.packages.filter((p) => p && p.number).map((p) => ({ id: uid(), label: String(p.label || 'Package'), number: String(p.number), carrier: p.carrier || carrierOf(p.number), expected: isDay(p.expected) ? p.expected : '', delivered: !!p.delivered }));
+      savePkgs();
+      done.push('packages');
+    }
+    if (o.cleaned && typeof o.cleaned === 'object') { CLEANED = { ...CLEANED, ...o.cleaned }; store.set('cleaned', CLEANED); }
+    return done;
   }
 
   function setSetup() {
@@ -2763,6 +2879,31 @@
       haConnect();
     },
     'ha-disconnect': () => { S.haUrl = ''; S.haToken = ''; saveSettings(); haConnect(); renderApp(); toast('Disconnected. Showing sample devices.'); },
+    'import-apply': () => {
+      const text = ($('#imp-text')?.value || '').trim();
+      if (!text) { toast('Paste the setup file text or choose the file first.'); return; }
+      let o;
+      try { o = JSON.parse(text.replace(/^﻿/, '').replace(/^[^{]*/, '').replace(/[^}]*$/, '')); } catch (e) { toast('That text isn’t valid JSON. Copy the whole file, from the first { to the last }.'); return; }
+      try {
+        const done = importData(o);
+        toast(done.length ? `Imported ${done.join(', ')}. Reloading…` : 'Nothing in that file matched. No changes made.');
+        if (done.length) setTimeout(() => location.reload(), 1500);
+      } catch (e) { toast(e.message); }
+    },
+    'export-copy': async () => {
+      const text = JSON.stringify(exportData(!!$('#exp-secrets')?.checked), null, 2);
+      try { await navigator.clipboard.writeText(text); toast('Backup copied. Paste it into Notes or a file to keep it.'); }
+      catch (e) { const t = $('#imp-text'); if (t) { t.value = text; t.focus(); t.select(); } toast('Copy didn’t work here, so the backup is in the box above. Select all and copy it.'); }
+    },
+    'export-save': () => {
+      const text = JSON.stringify(exportData(!!$('#exp-secrets')?.checked), null, 2);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      a.download = `bauder-home-backup-${isoDay(0)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    },
     'clean-toggle': (el) => {
       const k = el.dataset.key;
       if (CLEANED[k]) delete CLEANED[k]; else CLEANED[k] = Date.now();
@@ -2811,6 +2952,12 @@
     if (d.vol) { dragging = false; call('media_player', 'volume_set', d.vol, { volume_level: +t.value / 100 }); return; }
     if (d.source) { call('media_player', 'select_source', d.source, { source: t.value }); return; }
     if (t.id === 'photo-input') { addPhotos(t.files); t.value = ''; return; }
+    if (t.id === 'imp-file') {
+      const f = t.files && t.files[0];
+      if (f) { const rd = new FileReader(); rd.onload = () => { const ta = $('#imp-text'); if (ta) ta.value = String(rd.result || ''); toast(`Loaded ${f.name}. Tap Import.`); }; rd.readAsText(f); }
+      t.value = '';
+      return;
+    }
     if (d.ing != null) { const k = +d.ing; if (t.checked) APP.checked.add(k); else APP.checked.delete(k); return; }
     if (d.fav) {
       const id = d.fav;

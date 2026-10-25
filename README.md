@@ -136,6 +136,14 @@ The script sends this JSON. Anything missing stays as sample data in the app, so
 - EV `stage` is optional (`good`, `warn` or `crit`). Without it, the status wording decides the color: "approved" or "complete" is green, "denied" or "on hold" is red, everything else is amber.
 - If the feed can't be reached, the last good copy stays on screen.
 
+## Backup and setup files
+
+**Settings → Backup & setup** imports a setup file and exports a backup, both in the same JSON format. Use it to:
+- **Fill in real info all at once.** Someone (or an AI) writes a setup file with your people, emergency info, lists, recipes, meal plan and settings, and you import it on the iPad. Only the sections in the file change.
+- **Move to the Umbrel copy.** Export a backup from the GitHub Pages copy, then import it at `umbrel.local:8686`. Each web address keeps its own storage, so this is the only way to carry data over.
+
+The backup leaves out the Home Assistant token and PIN unless you tick the box. Photos aren't included. Setup files can contain your address and medical notes, so keep them out of this public repo.
+
 ## Set up the iPad
 
 1. Open the app in Safari, tap **Share → Add to Home Screen**, and launch it from that icon.
