@@ -20,11 +20,6 @@
       ]
     }
   ],
-  "inspections": {
-    "completed": 186,
-    "goal": 300,
-    "scheduled": [{ "date": "2026-10-26", "time": "9:30 AM", "name": "Annual inspection" }]
-  },
   "ev": [
     { "site": "Site A", "status": "Permit approved" },
     { "site": "Site B", "status": "In plan review" },

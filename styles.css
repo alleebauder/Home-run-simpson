@@ -348,13 +348,37 @@ div.tile-main { cursor: default; }
 .pill.crit { color: var(--crit); }
 .pill.good::before, .pill.warn::before, .pill.crit::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
-/* Inspections ring */
-.ring-wrap { flex: 1; display: flex; align-items: center; gap: 12px; min-height: 0; }
-.ring { width: 74px; height: 74px; flex: none; }
-.ring circle { fill: none; stroke-width: 10; }
-.ring .track { stroke: var(--hair); }
-.ring .val { stroke: var(--accent); stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
-.ring text { fill: var(--fg); font: 700 20px var(--font-round); }
+/* Countdown */
+.w-count .w-head .clamp1 { flex: 1; }
+.w-count .count-body { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+.w-count .count-num { font: 700 clamp(36px, 4.6vw, 52px)/1 var(--font-round); letter-spacing: -.04em; color: var(--fg); }
+.w-count .count-num.is-word { font-size: clamp(30px, 3.6vw, 40px); letter-spacing: -.03em; }
+.w-count .count-unit { margin-top: 2px; font-size: 14px; font-weight: 650; color: var(--fg-dim); }
+
+/* Tesla: two cars on a 2×2 private widget. */
+.w-tesla .tesla-cards { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tesla-card { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 16px; background: var(--glass-strong); }
+.tesla-photo { flex: 1; min-height: 52px; border-radius: 12px; overflow: hidden; background: color-mix(in srgb, var(--fg) 6%, transparent); display: grid; place-items: center; color: var(--fg-dim); }
+.tesla-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tesla-photo svg { width: 78%; height: 40px; }
+.tesla-name { font: 700 16px/1.15 var(--font-round); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tesla-label { font-size: 13px; font-weight: 700; letter-spacing: .01em; color: var(--fg-dim); }
+.tesla-stats { font-size: 13px; color: var(--fg-dim); }
+.tesla-actions { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, .7fr); gap: 6px; }
+.tesla-actions .qbtn { min-height: 44px; padding: 0 8px; font-size: 15px; }
+.tesla-card.is-warm { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); animation: tesla-glow 1.6s ease-in-out infinite; }
+.tesla-card.is-warm .tesla-label { color: var(--accent); }
+.tesla-card.is-defrost { --tesla-ice: #2a62d8; background: color-mix(in srgb, var(--tesla-ice) 16%, transparent); box-shadow: inset 0 0 0 2px var(--tesla-ice); animation: tesla-glow 1.1s ease-in-out infinite; }
+.tesla-card.is-defrost .tesla-label { color: var(--tesla-ice); }
+.tesla-card.is-down { opacity: .92; }
+@keyframes tesla-glow { 50% { filter: brightness(1.12); } }
+.tesla-setup { display: grid; gap: 10px; margin-bottom: 12px; }
+.tesla-setup-h { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; align-items: center; }
+.tesla-photo.sm { height: 64px; flex: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tesla-card.is-defrost { --tesla-ice: #9ec1ff; }
+}
+:root[data-theme="dark"] .tesla-card.is-defrost { --tesla-ice: #9ec1ff; }
 
 /* Forecast */
 .fc { display: grid; grid-template-columns: 1fr auto auto; gap: 6px 12px; align-items: center; }
@@ -586,13 +610,18 @@ div.tile-main { cursor: default; }
 .stepcard .count { font-weight: 700; font-size: 13px; letter-spacing: .05em; text-transform: uppercase; color: var(--fg-dim); }
 .stepcard .text { font: 500 clamp(22px, 2.6vw, 30px)/1.35 var(--font-round); text-wrap: pretty; }
 .stepnav { display: flex; gap: 10px; flex-wrap: wrap; }
+.stepcard .qbtn { min-height: 48px; padding: 0 18px; font-size: 16px; }
 .stepnav .qbtn { min-height: 52px; padding: 0 24px; font-size: 17px; }
-.meal-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--hair); }
-.meal-row .d { font-weight: 700; }
+.meal-row { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 12px; align-items: start; padding: 14px 0; border-bottom: 1px solid var(--hair); }
+.meal-row .d { font-weight: 700; padding-top: 12px; }
 .meal-row .d span { display: block; font-size: 12px; font-weight: 500; color: var(--fg-dim); }
 .meal-row.today .d { color: var(--accent); }
-.meal-row select, .meal-row input { min-height: 40px; border-radius: 12px; border: 1px solid var(--hair); background: var(--field); color: var(--fg); padding: 0 10px; font: 15px var(--font-ui); width: 100%; }
-.meal-row .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.meal-pick, .meal-set { display: grid; gap: 10px; min-width: 0; }
+.meal-levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.meal-row select { min-height: 48px; font-size: 17px; }
+.meal-row .qbtn { min-height: 48px; padding: 0 18px; font-size: 16px; }
+.meal-row .qbtn:disabled { opacity: .4; }
+.meal-name { display: flex; align-items: center; width: 100%; min-height: 48px; text-align: left; padding: 10px 14px; border-radius: 14px; background: var(--glass-strong); font: 700 17px/1.3 var(--font-round); color: inherit; }
 
 /* Timers */
 .timers { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }

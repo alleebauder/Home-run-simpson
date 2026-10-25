@@ -26,6 +26,145 @@
     clear() { try { Object.keys(localStorage).filter((k) => k.startsWith('bh.')).forEach((k) => localStorage.removeItem(k)); } catch (e) { /* blocked */ } },
   };
 
+  /* COUNTDOWN_FNS */
+  const COUNTDOWN_ZONE = 'America/Los_Angeles';
+  const COUNTDOWN_DEFAULT_DATE = '2027-06-01';
+  const COUNTDOWN_DEFAULT_LABEL = 'June 1, 2027';
+  const COUNTDOWN_LAYOUT_ID = 'count';
+  // Home screens saved before this widget used insp for that square.
+  const LEGACY_LAYOUT_IDS = { insp: 'count' };
+
+  function zoneYMD(date, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+    const get = (type) => parts.find((p) => p.type === type).value;
+    return `${get('year')}-${get('month')}-${get('day')}`;
+  }
+  function isCalendarDate(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+    if (!m) return false;
+    const y = +m[1], mo = +m[2], d = +m[3];
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+  }
+  function daysUntilDate(targetISO, now, timeZone) {
+    const target = isCalendarDate(targetISO) ? String(targetISO) : COUNTDOWN_DEFAULT_DATE;
+    const today = zoneYMD(now, timeZone);
+    const utc = (iso) => { const [y, m, d] = iso.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+    return Math.round((utc(target) - utc(today)) / 86400000);
+  }
+  function cleanCountdownSettings(date, label) {
+    const text = String(label ?? '').trim().slice(0, 60);
+    return { date: isCalendarDate(date) ? String(date) : COUNTDOWN_DEFAULT_DATE, label: text || COUNTDOWN_DEFAULT_LABEL };
+  }
+  function countdownView(targetISO, label, now) {
+    const clean = cleanCountdownSettings(targetISO, label);
+    const days = daysUntilDate(clean.date, now || new Date(), COUNTDOWN_ZONE);
+    let number, unit;
+    if (days > 1) { number = String(days); unit = 'days'; }
+    else if (days === 1) { number = '1'; unit = 'day'; }
+    else if (days === 0) { number = 'Today'; unit = ''; }
+    else if (days === -1) { number = '1'; unit = 'day ago'; }
+    else { number = String(-days); unit = 'days ago'; }
+    return { days, number, unit, label: clean.label, date: clean.date, word: days === 0 };
+  }
+  function normalizeLayoutIds(list, known, dropPrivate) {
+    if (!Array.isArray(list)) return null;
+    const seen = new Set();
+    const out = [];
+    for (const raw of list) {
+      const id = LEGACY_LAYOUT_IDS[raw] || raw;
+      const info = known[id];
+      if (!info || seen.has(id)) continue;
+      if (dropPrivate && info.private) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
+  }
+  /* /COUNTDOWN_FNS */
+
+  /* TESLA_FNS */
+  const TESLA_LAYOUT_ID = 'tesla';
+  const TESLA_DEFAULT_CARS = [
+    { name: 'Car 1', climate: '', inside: '', battery: '', defrost: '' },
+    { name: 'Car 2', climate: '', inside: '', battery: '', defrost: '' },
+  ];
+  const TESLA_PREV_MAIN = ['time', 'status', 'next', 'home', 'tasks', 'cam', 'kitchen', 'media', 'board', 'energy', 'packages', 'emergency', 'bnb', 'count', 'ev'];
+
+  function teslaEntityId(value) {
+    const s = String(value || '').trim().toLowerCase();
+    return /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/.test(s) ? s : '';
+  }
+  function cleanTeslaCars(raw) {
+    const src = Array.isArray(raw) ? raw : [];
+    return [0, 1].map((i) => {
+      const c = src[i] && typeof src[i] === 'object' ? src[i] : {};
+      const name = String(c.name || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+      return {
+        name: name || TESLA_DEFAULT_CARS[i].name,
+        climate: teslaEntityId(c.climate),
+        inside: teslaEntityId(c.inside),
+        battery: teslaEntityId(c.battery),
+        defrost: teslaEntityId(c.defrost),
+      };
+    });
+  }
+  function withTeslaWidget(main) {
+    if (!Array.isArray(main) || main.includes(TESLA_LAYOUT_ID)) return main;
+    const same = main.length === TESLA_PREV_MAIN.length && main.every((id, i) => id === TESLA_PREV_MAIN[i]);
+    return same ? main.concat([TESLA_LAYOUT_ID]) : main;
+  }
+  function teslaBadState(state) {
+    if (!state || typeof state !== 'object') return true;
+    const s = String(state.state || '').toLowerCase();
+    return !s || s === 'unavailable' || s === 'unknown';
+  }
+  function teslaNumber(state) {
+    if (teslaBadState(state)) return null;
+    const n = parseFloat(state.state);
+    return Number.isFinite(n) ? n : null;
+  }
+  function teslaInsideText(state) {
+    const n = teslaNumber(state);
+    return n == null ? '' : `${Math.round(n)}°`;
+  }
+  function teslaBatteryText(state) {
+    const n = teslaNumber(state);
+    return n == null ? '' : `${Math.round(n)}%`;
+  }
+  function teslaClimateOn(state) {
+    if (teslaBadState(state)) return false;
+    const mode = String(state.state || '').toLowerCase();
+    if (mode && mode !== 'off') return true;
+    const action = String(state.attributes && state.attributes.hvac_action || '').toLowerCase();
+    return action === 'heating' || action === 'cooling' || action === 'preheating' || action === 'defrosting';
+  }
+  function teslaSwitchOn(state) {
+    return !teslaBadState(state) && String(state.state || '').toLowerCase() === 'on';
+  }
+  function teslaCarView(car, live, states) {
+    const st = states || {};
+    const climate = car.climate ? st[car.climate] : null;
+    const connected = !!(live && car.climate && climate && !teslaBadState(climate));
+    if (!connected) return { connected: false, label: 'Not connected', warming: false, defrosting: false, inside: '', battery: '' };
+    const defrost = car.defrost ? st[car.defrost] : null;
+    const switchOn = !!(car.defrost && teslaSwitchOn(defrost));
+    const blob = `${car.defrost} ${(defrost && defrost.attributes && defrost.attributes.friendly_name) || ''}`.toLowerCase();
+    const action = String(climate.attributes && climate.attributes.hvac_action || '').toLowerCase();
+    const defrosting = action === 'defrosting' || (switchOn && /defrost/.test(blob));
+    const warming = !defrosting && (teslaClimateOn(climate) || switchOn);
+    const label = defrosting ? 'Defrosting' : warming ? 'Warming' : 'Off';
+    return {
+      connected: true,
+      label,
+      warming,
+      defrosting,
+      inside: car.inside ? teslaInsideText(st[car.inside]) : '',
+      battery: car.battery ? teslaBatteryText(st[car.battery]) : '',
+    };
+  }
+  /* /TESLA_FNS */
+
   // ================================================================== icons
   const ICON = {
     bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2V16h5v-.2c.1-.8.5-1.5 1.1-2A6 6 0 0 0 12 3z"/>',
@@ -53,7 +192,6 @@
     photo: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>',
     key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/>',
-    clip: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11l2 2 4-4M9 17h6"/>',
     bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
     moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z"/>',
@@ -81,6 +219,7 @@
     mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
     send: '<path d="M4 12l16-8-6 16-2.5-6.5z"/>',
     box: '<path d="M3 7.5L12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5l9 4.5 9-4.5M12 12v9"/>',
+    car: '<path d="M3 14l2-5a3 3 0 0 1 3-2h6l3 3h2a2 2 0 0 1 2 2v2H3z"/><circle cx="7.5" cy="16.5" r="1.6"/><circle cx="16.5" cy="16.5" r="1.6"/>',
     msg: '<path d="M4 5h16v11H9l-5 4z"/>',
     phone: '<path d="M5 4h3l2 5-2 1.5a11 11 0 0 0 5.5 5.5L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
     sos: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5h.01"/>',
@@ -128,14 +267,21 @@
     forecast: ['Forecast', 'tall'],
     timer: ['Timers', 'small'],
     bnb: ['Airbnb & cleaning', 'tall', true],
-    insp: ['Inspections', 'small', true],
+    count: ['Countdown', 'small'],
     ev: ['EV projects', 'small', true],
+    tesla: ['Tesla', 'large', true],
   };
   const SIZE_LABEL = { small: '1×1', wide: '2×1', tall: '1×2', large: '2×2' };
   const DEFAULT_LAYOUT = {
-    main: ['time', 'status', 'next', 'home', 'tasks', 'cam', 'kitchen', 'media', 'board', 'energy', 'packages', 'emergency', 'bnb', 'insp', 'ev'],
+    main: ['time', 'status', 'next', 'home', 'tasks', 'cam', 'kitchen', 'media', 'board', 'energy', 'packages', 'emergency', 'bnb', 'count', 'ev', 'tesla'],
     guest: ['time', 'status', 'emergency', 'home', 'kitchen', 'media', 'forecast', 'timer'],
   };
+  function layoutList(list, key, dropPrivate) {
+    const known = {};
+    Object.keys(WIDGET_INFO).forEach((id) => { known[id] = { private: !!WIDGET_INFO[id][2] }; });
+    const mapped = normalizeLayoutIds(list, known, dropPrivate);
+    return mapped == null ? clone(DEFAULT_LAYOUT[key]) : mapped;
+  }
 
   const APP_TITLES = { home: 'Home', cal: 'Calendar', tasks: 'Tasks', airbnb: 'Airbnb', kitchen: 'Kitchen', music: 'Music', security: 'Security', board: 'Message Board', packages: 'Packages', energy: 'Energy', photos: 'Photos', emergency: 'Emergency', settings: 'Settings', assist: 'Assistant' };
   const APP_ICONS = { home: 'home', cal: 'cal', tasks: 'check', airbnb: 'key', kitchen: 'pot', music: 'music', security: 'shield', board: 'msg', packages: 'box', energy: 'bolt', photos: 'photo', emergency: 'sos', settings: 'gear', assist: 'sparkle' };
@@ -159,6 +305,8 @@
     lat: 47.6732,
     lon: -117.2394,
     feedUrl: '',
+    countdownDate: COUNTDOWN_DEFAULT_DATE,
+    countdownLabel: COUNTDOWN_DEFAULT_LABEL,
     cleanOnCal: true,
     idleAfter: 120,
     face: 'bold',
@@ -183,6 +331,7 @@
     arrivals: {},
     awayMode: '',
     speak: true,
+    tesla: { cars: TESLA_DEFAULT_CARS.map((c) => ({ ...c })) },
   };
 
   function loadSettings() {
@@ -198,12 +347,23 @@
       else s[k] = sv;
     });
     Object.keys(DEFAULT_MODES).forEach((id) => { s.modes[id] = { ...DEFAULT_MODES[id], ...((saved.modes || {})[id] || {}) }; });
-    ['main', 'guest'].forEach((k) => { s.layout[k] = Array.isArray(s.layout[k]) ? s.layout[k].filter((w) => WIDGET_INFO[w]) : clone(DEFAULT_LAYOUT[k]); });
+    ['main', 'guest'].forEach((k) => { s.layout[k] = layoutList(s.layout[k], k, false); });
+    s.layout.main = withTeslaWidget(s.layout.main);
+    s.tesla = { cars: cleanTeslaCars(s.tesla && s.tesla.cars) };
+    const countdown = cleanCountdownSettings(s.countdownDate, s.countdownLabel);
+    s.countdownDate = countdown.date;
+    s.countdownLabel = countdown.label;
     if (!s.people.some((p) => p.fixed)) s.people.push(clone(DEFAULTS.people[2]));
     return s;
   }
   const S = loadSettings();
   const saveSettings = () => store.set('settings', S);
+  let teslaPhotos = [null, null];
+  {
+    const savedPhotos = store.get('teslaPhotos', []);
+    teslaPhotos = [0, 1].map((i) => (typeof savedPhotos?.[i] === 'string' && savedPhotos[i].startsWith('data:image/') ? savedPhotos[i] : null));
+  }
+  const saveTeslaPhotos = () => store.set('teslaPhotos', teslaPhotos);
 
   const personById = (id) => S.people.find((p) => p.id === id);
   const curProfile = () => personById(S.profile) || S.people[0];
@@ -341,7 +501,6 @@
         { name: 'Broadway A', checkin: '15:00', checkout: '10:00', stays: [{ start: isoDay(-1), end: isoDay(2), phone4: '0581' }, { start: isoDay(5), end: isoDay(7), phone4: '3302' }] },
         { name: 'Broadway B', checkin: '16:00', checkout: '11:00', stays: [{ start: isoDay(1), end: isoDay(4), phone4: '9124' }, { start: isoDay(4), end: isoDay(8), phone4: '6650' }] },
       ],
-      inspections: { completed: 186, goal: 300, scheduled: [{ date: isoDay(1), time: '9:30 AM', name: 'Annual inspection' }, { date: isoDay(2), time: '1:00 PM', name: 'Re-inspection' }] },
       ev: [{ site: 'Site A', status: 'Permit approved' }, { site: 'Site B', status: 'In plan review' }, { site: 'Site C', status: 'Utility design' }],
       events: [],
       calendars: [],
@@ -409,7 +568,17 @@
   const saveEmerg = () => store.set('emergency', EMERG);
   const MEALS = store.get('meals', null) || { [isoDay(0)]: { recipe: 'sample-cornbread', text: 'Chili' }, _sample: true };
   const saveMeals = () => store.set('meals', MEALS);
-  let recipes = store.get('recipes', null) || [SAMPLE_RECIPE];
+  let recipes = store.get('recipes', null);
+  if (!Array.isArray(recipes)) recipes = [];
+  const RECIPE_LIB = (typeof window !== 'undefined' && window.BAUDER_RECIPES && window.BAUDER_RECIPES.recipes)
+    ? window.BAUDER_RECIPES
+    : { tree: [], recipes: {} };
+  const LIB_RECIPES = { ...(RECIPE_LIB.recipes || {}) };
+  if (!LIB_RECIPES['sample-cornbread']) {
+    LIB_RECIPES['sample-cornbread'] = { title: SAMPLE_RECIPE.title, ingredients: SAMPLE_RECIPE.ingredients.slice(), steps: SAMPLE_RECIPE.steps.slice() };
+  }
+  // Built-in dishes live in the library file. Keep only recipes typed on this iPad.
+  recipes = recipes.filter((r) => r && r.id && r.title && !LIB_RECIPES[r.id]);
   const saveRecipes = () => store.set('recipes', recipes);
   let RINGS = store.get('rings', []);
 
@@ -597,6 +766,23 @@
       toast(`Couldn’t reach ${entityName(id)}. Check the Home Assistant connection.`);
       return false;
     }
+  }
+  async function callQuiet(domain, service, id, data = {}) {
+    if (!H.live || !id) return false;
+    try {
+      await haSend({ type: 'call_service', domain, service, service_data: data, target: { entity_id: id } });
+      return true;
+    } catch (e) { return false; }
+  }
+  async function teslaCommand(index, on) {
+    const car = S.tesla.cars[index];
+    if (!car || !H.live || !car.climate) return;
+    const jobs = on
+      ? [['climate', 'set_hvac_mode', car.climate, { hvac_mode: 'heat_cool' }], ['climate', 'turn_on', car.climate, {}], ...(car.defrost ? [[domainOf(car.defrost), 'turn_on', car.defrost, {}]] : [])]
+      : [...(car.defrost ? [[domainOf(car.defrost), 'turn_off', car.defrost, {}]] : []), ['climate', 'set_hvac_mode', car.climate, { hvac_mode: 'off' }], ['climate', 'turn_off', car.climate, {}]];
+    let ok = false;
+    for (const [domain, service, id, data] of jobs) { if (await callQuiet(domain, service, id, data)) ok = true; }
+    if (!ok) toast(`Couldn’t reach ${car.name}. Check the Home Assistant connection.`);
   }
 
   const entityName = (id) => H.states[id]?.attributes?.friendly_name || id;
@@ -850,23 +1036,22 @@
   }
 
   // ============================================================ Bauder HQ
-  const ALL_SAMPLE = () => ({ listings: true, insp: true, ev: true, events: true });
+  const ALL_SAMPLE = () => ({ listings: true, ev: true, events: true });
   const FEED = { data: sampleFeed(), sample: true, part: ALL_SAMPLE(), note: '', updated: 0 };
   function normalizeFeed(j) {
     if (!j || typeof j !== 'object') throw new Error('The feed didn’t send data');
     if (j.error) throw new Error(String(j.error));
     const s = sampleFeed();
-    const hasL = Array.isArray(j.listings), hasI = !!(j.inspections && typeof j.inspections === 'object'), hasE = Array.isArray(j.ev), hasC = Array.isArray(j.events);
+    const hasL = Array.isArray(j.listings), hasE = Array.isArray(j.ev), hasC = Array.isArray(j.events);
     return {
       data: {
         listings: hasL ? j.listings : s.listings,
-        inspections: hasI ? j.inspections : s.inspections,
         ev: hasE ? j.ev : s.ev,
         events: hasC ? j.events : [],
         calendars: Array.isArray(j.calendars) ? j.calendars : [],
         errors: Array.isArray(j.errors) ? j.errors : [],
       },
-      part: { listings: !hasL, insp: !hasI, ev: !hasE, events: !hasC },
+      part: { listings: !hasL, ev: !hasE, events: !hasC },
     };
   }
   async function loadFeed(fresh) {
@@ -892,7 +1077,7 @@
   }
   function feedStatusText() {
     if (FEED.note) return FEED.note;
-    if (FEED.sample) return 'No feed set. Airbnb, Inspections and EV widgets show sample data.';
+    if (FEED.sample) return 'No feed set. Airbnb and EV widgets show sample data.';
     const d = FEED.data, parts = [];
     if (!FEED.part.events) parts.push(`${plural(d.calendars.length, 'Google calendar')} with ${plural(d.events.length, 'event')}`);
     if (!FEED.part.listings) parts.push(d.listings.map((l) => `${l.name}: ${l.error ? 'error' : plural((l.stays || []).length, 'stay')}`).join(', '));
@@ -1153,14 +1338,92 @@
     }
     return out;
   }
+  /* MEAL_FNS */
+  function mealWeekDates(now) {
+    const start = new Date(now.getTime());
+    start.setHours(12, 0, 0, 0);
+    const day = start.getDay();
+    start.setDate(start.getDate() + (day === 0 ? -6 : 1 - day));
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start.getTime());
+      d.setDate(start.getDate() + i);
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      out.push(`${d.getFullYear()}-${m}-${dd}`);
+    }
+    return out;
+  }
+  function mealNodeKey(node) {
+    return (node && (node.id || node.name)) || '';
+  }
+  function mealNodesAt(roots, path) {
+    let nodes = roots || [];
+    for (const key of path || []) {
+      const node = nodes.find((n) => mealNodeKey(n) === key);
+      if (!node || !Array.isArray(node.children)) return [];
+      nodes = node.children;
+    }
+    return nodes;
+  }
+  function mealPathForId(roots, id) {
+    if (!id) return [];
+    function walk(nodes, path) {
+      for (const n of nodes || []) {
+        const key = mealNodeKey(n);
+        if (n.id === id) return path.concat(key);
+        if (n.children) {
+          const hit = walk(n.children, path.concat(key));
+          if (hit) return hit;
+        }
+      }
+      return null;
+    }
+    return walk(roots, []) || [];
+  }
+  function mealChosenId(roots, path) {
+    if (!path || !path.length) return '';
+    const id = path[path.length - 1];
+    const parent = mealNodesAt(roots, path.slice(0, -1));
+    const node = parent.find((n) => mealNodeKey(n) === id);
+    if (!node || !node.id || node.children) return '';
+    return node.id;
+  }
+  /* /MEAL_FNS */
+
+  function libRecipe(id) {
+    const r = LIB_RECIPES[id];
+    if (!r) return null;
+    return { id, title: r.title, ingredients: r.ingredients || [], steps: r.steps || [], library: true };
+  }
+  function allRecipe(id) {
+    if (!id) return null;
+    return recipes.find((x) => x.id === id) || libRecipe(id);
+  }
+  function recipeByTitle(title) {
+    const t = String(title || '').trim().toLowerCase();
+    if (!t) return null;
+    return recipes.find((x) => x.title.toLowerCase() === t)
+      || Object.keys(LIB_RECIPES).map((id) => libRecipe(id)).find((r) => r && r.title.toLowerCase() === t)
+      || null;
+  }
+  function recipeRoots() {
+    const roots = Array.isArray(RECIPE_LIB.tree) ? RECIPE_LIB.tree.slice() : [];
+    if (recipes.length) roots.push({ name: 'My recipes', children: recipes.map((r) => ({ id: r.id })) });
+    return roots;
+  }
   function mealFor(iso) {
     const m = MEALS[iso];
     if (!m) return '';
-    const r = recipes.find((x) => x.id === m.recipe);
+    const r = allRecipe(m.recipe);
     const text = String(m.text || '').trim();
     if (!r) return text;
     if (!text || text.toLowerCase() === r.title.toLowerCase() || r.title.toLowerCase().includes(text.toLowerCase())) return r.title;
     return `${text} with ${r.title}`;
+  }
+  function mealSaved(iso) {
+    const m = MEALS[iso];
+    return !!(m && (String(m.text || '').trim() || m.recipe));
   }
 
   // ================================================================ photos
@@ -1782,17 +2045,35 @@
       <div class="sub-label" style="margin-top:4px">Listings</div>${status}</div></section>`;
   }
 
-  function wInsp() {
-    const i = FEED.data.inspections || {};
-    const done = +i.completed || 0, goal = +i.goal || 0;
-    const pct = goal ? clamp(done / goal, 0, 1) : 0;
-    const C = 2 * Math.PI * 40;
-    const now = new Date();
-    const weeks = Math.max(1, Math.ceil((new Date(now.getFullYear(), 11, 31) - now) / (7 * 86400000)));
-    const left = Math.max(0, goal - done);
-    return `<section class="${wcls('insp')}" aria-label="Inspections">${whead('clip', 'Inspections', sampleTag(FEED.part.insp))}
-      <div class="ring-wrap"><svg class="ring" viewBox="0 0 100 100" role="img" aria-label="${Math.round(pct * 100)} percent of goal"><circle class="track" cx="50" cy="50" r="40"/><circle class="val" cx="50" cy="50" r="40" stroke-dasharray="${(pct * C).toFixed(1)} ${C.toFixed(1)}"/><text x="50" y="57" text-anchor="middle">${Math.round(pct * 100)}%</text></svg>
-      <div style="min-width:0"><div class="big num">${done}</div><div class="muted" style="font-size:13px">of ${goal} this year</div><div class="faint" style="font-size:12.5px">${left ? `${Math.ceil(left / weeks)} a week to finish` : 'Goal met'}</div></div></div></section>`;
+  function wCount() {
+    const v = countdownView(S.countdownDate, S.countdownLabel, new Date());
+    const spoken = v.days === 0 ? 'today' : `${v.number} ${v.unit}`;
+    return `<section class="${wcls(COUNTDOWN_LAYOUT_ID)}" aria-label="${esc(`Countdown, ${v.label}, ${spoken}`)}">
+      <div class="w-head">${icon('cal')}<span class="clamp1">${esc(v.label)}</span></div>
+      <div class="count-body"><div class="count-num num${v.word ? ' is-word' : ''}">${esc(v.number)}</div>${v.unit ? `<div class="count-unit">${esc(v.unit)}</div>` : ''}</div></section>`;
+  }
+
+  const TESLA_SILHOUETTE = '<svg viewBox="0 0 120 48" aria-hidden="true"><path fill="currentColor" d="M18 30h10a7 7 0 0 0 14 0h28a7 7 0 0 0 14 0h16c3 0 6-2 7-5l3-8c1-3-1-5-4-5H70L58 8c-2-1-4-1-6 0L34 12H18c-4 0-8 3-8 7v4c0 4 4 7 8 7z"/><circle cx="32" cy="32" r="4" fill="var(--glass-strong)"/><circle cx="84" cy="32" r="4" fill="var(--glass-strong)"/></svg>';
+  function teslaSensorIds(kind, current) {
+    const match = (id, re) => re.test(id) || re.test(entityName(id));
+    let ids = [];
+    if (kind === 'climate') ids = idsOf('climate');
+    else if (kind === 'inside') ids = idsOf('sensor').filter((id) => H.states[id].attributes.device_class === 'temperature' || /°|º/.test(String(H.states[id].attributes.unit_of_measurement || '')) || match(id, /temp|cabin|inside|interior|climate/i));
+    else if (kind === 'battery') ids = idsOf('sensor').filter((id) => H.states[id].attributes.device_class === 'battery' || H.states[id].attributes.unit_of_measurement === '%' || match(id, /battery|charge/i));
+    else ids = idsOf('switch', 'input_boolean');
+    if (current && !ids.includes(current)) ids = [current, ...ids];
+    return ids;
+  }
+  function wTesla() {
+    const cards = S.tesla.cars.map((car, i) => {
+      const view = teslaCarView(car, H.live, H.states);
+      const cls = view.defrosting ? 'is-defrost' : view.warming ? 'is-warm' : view.connected ? 'is-off' : 'is-down';
+      const photo = teslaPhotos[i] ? `<img src="${teslaPhotos[i]}" alt="">` : TESLA_SILHOUETTE;
+      const stats = [view.inside && `${view.inside} inside`, view.battery && `${view.battery} battery`].filter(Boolean).join(' · ');
+      const dis = view.connected ? '' : ' disabled';
+      return `<article class="tesla-card ${cls}"><div class="tesla-photo">${photo}</div><div class="tesla-name">${esc(car.name)}</div><div class="tesla-label" aria-live="polite">${esc(view.label)}</div>${stats ? `<div class="tesla-stats">${esc(stats)}</div>` : ''}<div class="tesla-actions"><button type="button" class="qbtn primary" data-act="tesla-warm" data-car="${i}" aria-pressed="${view.warming || view.defrosting}" aria-label="Warm up ${esc(car.name)}"${dis}>Warm up</button><button type="button" class="qbtn" data-act="tesla-off" data-car="${i}" aria-pressed="${view.connected && !view.warming && !view.defrosting}" aria-label="Turn off ${esc(car.name)}"${dis}>Off</button></div></article>`;
+    }).join('');
+    return `<section class="${wcls(TESLA_LAYOUT_ID)}" aria-label="Tesla">${whead('car', 'Tesla', '<button type="button" class="w-link" data-act="open" data-app="settings" data-stab="screen">Settings</button>')}<div class="tesla-cards">${cards}</div></section>`;
   }
 
   function wEv() {
@@ -1801,7 +2082,7 @@
     return `<section class="${wcls('ev')}" aria-label="EV projects">${whead('bolt', 'EV Projects', sampleTag(FEED.part.ev))}<div class="w-body">${body}</div></section>`;
   }
 
-  const RENDER = { time: wTime, status: wStatus, next: wNext, home: wHome, tasks: wTasks, cam: wCam, kitchen: wKitchen, media: wMedia, board: wBoard, energy: wEnergy, packages: wPackages, emergency: wEmergency, forecast: wForecast, timer: wTimer, bnb: wBnb, insp: wInsp, ev: wEv };
+  const RENDER = { time: wTime, status: wStatus, next: wNext, home: wHome, tasks: wTasks, cam: wCam, kitchen: wKitchen, media: wMedia, board: wBoard, energy: wEnergy, packages: wPackages, emergency: wEmergency, forecast: wForecast, timer: wTimer, bnb: wBnb, count: wCount, ev: wEv, tesla: wTesla };
 
   function renderHome() {
     const key = privateOK() ? 'main' : 'guest';
@@ -1865,7 +2146,7 @@
 
   // =================================================================== apps
   const APP = {
-    name: null, room: 'fav', ttab: 'groceries', ktab: 'plan', recipeId: null, step: 0, adding: false, checked: new Set(), confirm: null,
+    name: null, room: 'fav', ttab: 'groceries', ktab: 'plan', recipeId: null, step: 0, adding: false, checked: new Set(), confirm: null, mealEdit: null, mealPath: {},
     calView: 'week', calOffset: 0, calHide: new Set(), stab: 'connect', layoutKey: 'main', modeEdit: 'morning', emEdit: false,
   };
 
@@ -1876,7 +2157,7 @@
       if (name === 'settings' && S.pin && !(await askPin('Enter PIN to open Settings'))) return;
     }
     if (name !== APP.name) { APP.confirm = null; selectedPhotos.clear(); APP.emEdit = false; }
-    if (name !== 'kitchen') { APP.recipeId = null; APP.adding = false; }
+    if (name !== 'kitchen') { APP.recipeId = null; APP.adding = false; APP.mealEdit = null; APP.mealPath = {}; }
     APP.name = name;
     if (opts.ktab) { APP.ktab = opts.ktab; APP.recipeId = null; APP.adding = false; }
     if (opts.ttab) APP.ttab = opts.ttab;
@@ -1893,6 +2174,8 @@
     APP.name = null;
     APP.recipeId = null;
     APP.adding = false;
+    APP.mealEdit = null;
+    APP.mealPath = {};
     $('#sheet').hidden = true;
     $('#sheet').innerHTML = '';
     renderAll();
@@ -1910,8 +2193,9 @@
     let title = APP_TITLES[APP.name];
     let lead = '';
     if (APP.name === 'kitchen' && (APP.recipeId || APP.adding)) {
-      lead = `<button type="button" class="chip plain" data-act="chef-back">${icon('back')}Recipes</button>`;
-      if (APP.recipeId) title = recipes.find((r) => r.id === APP.recipeId)?.title || title;
+      const backLabel = APP.adding || APP.ktab !== 'plan' ? 'Recipes' : 'Meal plan';
+      lead = `<button type="button" class="chip plain" data-act="chef-back">${icon('back')}${backLabel}</button>`;
+      if (APP.recipeId) title = allRecipe(APP.recipeId)?.title || title;
       if (APP.adding) title = 'Add a recipe';
     }
     const body = APPS[APP.name]();
@@ -2041,16 +2325,17 @@
         <p class="help">Lines under “Ingredients” become a checklist and lines under “Directions” become steps.</p>
         <div class="quick"><button type="button" class="qbtn primary" data-act="recipe-save">Save recipe</button><button type="button" class="qbtn" data-act="chef-back">Cancel</button></div></div>`;
     }
-    const r = recipes.find((x) => x.id === APP.recipeId);
+    const r = allRecipe(APP.recipeId);
     if (!r) { APP.recipeId = null; return appKitchen(); }
     const n = r.steps.length;
     const i = clamp(APP.step, 0, Math.max(0, n - 1));
     const text = r.steps[i] || 'This recipe has no steps.';
     const tms = stepTimers(text).map((t) => `<button type="button" class="qbtn primary" data-act="timer" data-sec="${t.sec}" data-label="${esc(r.title)} · ${esc(t.label)}">${icon('timer')} Start ${esc(fmtDur(t.sec))}</button>`).join('');
     const confirmDel = APP.confirm === 'del-' + r.id;
+    const delBtn = r.library ? '' : `<button type="button" class="qbtn danger" data-act="recipe-del" data-id="${esc(r.id)}">${icon('trash')} ${confirmDel ? 'Tap again to delete' : 'Delete'}</button>`;
     return `<div class="cook">
       <div><div class="section-title">Ingredients</div><div class="ingredients">${r.ingredients.map((x, k) => `<label><input type="checkbox" data-ing="${k}" ${APP.checked.has(k) ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('') || '<p class="help">No ingredients listed.</p>'}</div>
-        <div class="quick" style="margin-top:16px"><button type="button" class="qbtn" data-act="recipe-groceries" data-id="${esc(r.id)}">${icon('cart')} Add to Groceries</button><button type="button" class="qbtn danger" data-act="recipe-del" data-id="${esc(r.id)}">${icon('trash')} ${confirmDel ? 'Tap again to delete' : 'Delete'}</button></div></div>
+        <div class="quick" style="margin-top:16px"><button type="button" class="qbtn" data-act="recipe-groceries" data-id="${esc(r.id)}">${icon('cart')} Add to Groceries</button>${delBtn}</div></div>
       <div class="stepcard"><div class="count">Step ${n ? i + 1 : 0} of ${n}</div><div class="text">${esc(text)}</div>${tms ? `<div class="quick">${tms}</div>` : ''}
         <div class="stepnav"><button type="button" class="qbtn" data-act="step" data-dir="-1" ${i === 0 ? 'disabled' : ''}>Back</button><button type="button" class="qbtn primary" data-act="step" data-dir="1" ${i >= n - 1 ? 'disabled' : ''}>Next step</button></div></div></div>
       ${timers.length ? `<div class="section-title">Timers</div>${timerCards()}` : ''}`;
@@ -2060,20 +2345,61 @@
     const tabs = [['plan', 'Meal plan'], ['recipes', 'Recipes'], ['timers', 'Timers']];
     const seg = `<div class="seg" role="group" aria-label="Kitchen">${tabs.map(([k, v]) => `<button type="button" data-act="k-tab" data-tab="${k}" aria-pressed="${APP.ktab === k}">${v}</button>`).join('')}</div>`;
     if (APP.ktab === 'recipes') {
+      const cards = recipes.length
+        ? recipes.map((r) => `<button type="button" class="recipe-card" data-act="recipe-open" data-id="${esc(r.id)}"><span class="t">${esc(r.title)}</span><span class="muted">${r.ingredients.length} ingredients · ${r.steps.length} steps</span></button>`).join('')
+        : '<div class="empty">None yet. Paste one here, or plan the week from the built-in recipes.</div>';
       return `${seg}<div class="quick" style="margin-bottom:16px"><button type="button" class="qbtn primary" data-act="recipe-add">${icon('plus')} Add a recipe</button></div>
-        <div class="recipes">${recipes.map((r) => `<button type="button" class="recipe-card" data-act="recipe-open" data-id="${esc(r.id)}"><span class="t">${esc(r.title)}</span><span class="muted">${r.ingredients.length} ingredients · ${r.steps.length} steps</span>${r.sample ? '<span><span class="tag">Sample</span></span>' : ''}</button>`).join('')}</div>
-        <p class="help" style="margin-top:16px">Paste a recipe from any website. Step mode keeps the clock face away while you cook, and times like “bake 25 minutes” become one-tap timers.</p>`;
+        <div class="recipes">${cards}</div>
+        <p class="help" style="margin-top:16px">Paste a recipe from any website. It shows up in the meal plan under My recipes. Step mode keeps the clock face away while you cook, and times like “bake 25 minutes” become one-tap timers.</p>`;
     }
     if (APP.ktab === 'timers') return seg + timersHTML();
-    const rows = Array.from({ length: 7 }, (_, i) => {
-      const d = addDays(new Date(), i), iso = isoOf(d), m = MEALS[iso] || {};
-      return `<div class="meal-row${i === 0 ? ' today' : ''}"><div class="d">${esc(i === 0 ? 'Tonight' : d.toLocaleDateString(undefined, { weekday: 'long' }))}<span>${esc(d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</span></div>
-        <div class="pair"><input id="meal-t-${iso}" data-meal-text="${iso}" value="${esc(m.text || '')}" placeholder="Dinner, like “Tacos”" aria-label="Dinner"><select id="meal-r-${iso}" data-meal-recipe="${iso}" aria-label="Recipe"><option value="">No recipe</option>${recipes.map((r) => `<option value="${esc(r.id)}" ${r.id === m.recipe ? 'selected' : ''}>${esc(r.title)}</option>`).join('')}</select></div></div>`;
-    }).join('');
-    const rid = MEALS[isoDay(0)]?.recipe;
-    return `${seg}${MEALS._sample ? '<p class="help" style="margin-bottom:12px">Sample plan. Change any night to make it yours.</p>' : ''}
+    const rows = mealWeekDates(new Date()).map((iso) => mealPlanRow(iso)).join('');
+    const todayMeal = MEALS[isoDay(0)];
+    const rid = todayMeal && allRecipe(todayMeal.recipe) ? todayMeal.recipe : '';
+    return `${seg}${MEALS._sample ? '<p class="help" style="margin-bottom:8px">Sample plan for today. Save a recipe on any day to make the week yours.</p>' : ''}
+      <p class="help" style="margin-bottom:12px">Choose a cuisine, then the next group, until a recipe is selected. Save stores it for that day. Tap a planned meal to cook it. Change or Clear a day anytime.</p>
       <div class="panel" style="padding-block:6px">${rows}</div>
       <div class="quick" style="margin-top:14px">${rid ? `<button type="button" class="qbtn primary" data-act="recipe-open" data-id="${esc(rid)}">Start cooking tonight’s recipe</button>` : ''}<button type="button" class="qbtn" data-act="meal-groceries">${icon('cart')} Add this week’s ingredients to Groceries</button></div>`;
+  }
+  function mealPlanRow(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    const date = new Date(y, m - 1, d, 12);
+    const today = iso === isoDay(0);
+    const dayName = date.toLocaleDateString(undefined, { weekday: 'long' });
+    const when = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const head = `<div class="d">${esc(dayName)}${today ? ' · Today' : ''}<span>${esc(when)}</span></div>`;
+    if (mealSaved(iso) && APP.mealEdit !== iso) {
+      const label = mealFor(iso) || 'Meal';
+      const rec = allRecipe(MEALS[iso].recipe);
+      const name = rec
+        ? `<button type="button" class="meal-name" data-act="recipe-open" data-id="${esc(rec.id)}">${esc(label)}</button>`
+        : `<div class="meal-name">${esc(label)}</div>`;
+      return `<div class="meal-row${today ? ' today' : ''}">${head}<div class="meal-set">${name}<div class="quick"><button type="button" class="qbtn" data-act="meal-edit" data-day="${iso}">Change</button><button type="button" class="qbtn" data-act="meal-clear" data-day="${iso}">Clear</button></div></div></div>`;
+    }
+    const roots = recipeRoots();
+    const path = APP.mealPath[iso] || [];
+    const levels = [];
+    let depth = 0;
+    let nodes = mealNodesAt(roots, []);
+    while (nodes.length) {
+      const chosen = path[depth] || '';
+      const recipesOnly = nodes.every((n) => n.id && !n.children);
+      const label = depth === 0 ? 'Cuisine' : recipesOnly ? 'Recipe' : 'Next';
+      const opts = nodes.map((n) => {
+        const key = mealNodeKey(n);
+        const name = n.id ? (allRecipe(n.id)?.title || n.id) : n.name;
+        return `<option value="${esc(key)}" ${key === chosen ? 'selected' : ''}>${esc(name)}</option>`;
+      }).join('');
+      levels.push(`<label class="field"><span>${label}</span><select data-meal-level="${depth}" data-meal-day="${iso}" aria-label="${label} for ${esc(dayName)}"><option value="">Choose…</option>${opts}</select></label>`);
+      if (!chosen) break;
+      const node = nodes.find((n) => mealNodeKey(n) === chosen);
+      if (!node || !node.children) break;
+      nodes = node.children;
+      depth += 1;
+    }
+    const ready = mealChosenId(roots, path);
+    const cancel = mealSaved(iso) ? `<button type="button" class="qbtn" data-act="meal-cancel" data-day="${iso}">Cancel</button>` : '';
+    return `<div class="meal-row${today ? ' today' : ''}">${head}<div class="meal-pick"><div class="meal-levels">${levels.join('')}</div><div class="quick"><button type="button" class="qbtn primary" data-act="meal-save" data-day="${iso}" ${ready ? '' : 'disabled'}>Save</button>${cancel}</div></div></div>`;
   }
 
   // ---- Music
@@ -2249,7 +2575,21 @@
       <div class="quick"><button type="button" class="qbtn primary" data-act="feed-save">Save and refresh</button>${S.feedUrl ? '<button type="button" class="qbtn" data-act="feed-refresh">Refresh now</button>' : ''}</div>
       <p class="help" id="feed-status">${esc(feedStatusText())}</p>
       <label class="check"><input type="checkbox" id="s-cleanOnCal" data-set="cleanOnCal" ${S.cleanOnCal ? 'checked' : ''}><span>Show Airbnb cleanings on the family calendar</span></label>
-      <p class="help">A small script in your Google account reads your Google calendars and Airbnb calendar links and sends them here, so your private links never go to GitHub. Setup takes about 10 minutes: follow “Google Calendar and Airbnb” in the <a href="https://github.com/alleebauder/Home-run-simpson#google-calendar-and-airbnb" target="_blank" rel="noopener">README</a>. The same feed can also carry Inspections and EV project data. It refreshes every 5 minutes.</p>`;
+      <p class="help">A small script in your Google account reads your Google calendars and Airbnb calendar links and sends them here, so your private links never go to GitHub. Setup takes about 10 minutes: follow “Google Calendar and Airbnb” in the <a href="https://github.com/alleebauder/Home-run-simpson#google-calendar-and-airbnb" target="_blank" rel="noopener">README</a>. The same feed can also carry EV project data. It refreshes every 5 minutes.</p>`;
+  }
+
+  function teslaSettingsHTML() {
+    const blanks = { climate: 'Choose the climate entity', inside: 'Inside temperature, optional', battery: 'Battery level, optional', defrost: 'Defrost or precondition switch, optional' };
+    const cars = S.tesla.cars.map((car, i) => {
+      const photo = teslaPhotos[i] ? `<img src="${teslaPhotos[i]}" alt="">` : TESLA_SILHOUETTE;
+      const field = (key) => `<label class="field"><span>${key === 'climate' ? 'Climate' : key === 'inside' ? 'Inside temperature' : key === 'battery' ? 'Battery' : 'Defrost or precondition'}</span>${sel(`${i}-${key}`, entityOpts(teslaSensorIds(key, car[key]), blanks[key]), car[key], 'data-tesla')}</label>`;
+      return `<div class="panel tesla-setup"><div class="tesla-setup-h"><div class="tesla-photo sm">${photo}</div><label class="field"><span>Name</span><input type="text" data-tesla="${i}-name" maxlength="40" value="${esc(car.name)}" autocomplete="off"></label></div>
+        <div class="quick"><label class="qbtn file-btn">${icon('photo')} Choose photo<input type="file" data-tesla-photo="${i}" accept="image/*"></label>${teslaPhotos[i] ? `<button type="button" class="qbtn" data-act="tesla-photo-clear" data-car="${i}">Remove photo</button>` : ''}</div>
+        <div class="row2">${field('climate')}${field('inside')}${field('battery')}${field('defrost')}</div></div>`;
+    }).join('');
+    return `<div class="section-title">Tesla</div>
+      <p class="help">Two cars, each with its own photo and name. Photos stay on this iPad. Pick the climate entity from Home Assistant, plus the inside temperature, battery, and a defrost or preconditioning switch if you have them. Warm up sends heat/cool and turns that switch on. The cards say Not connected until Home Assistant is connected and a climate entity is chosen. Setup steps are in the README.</p>
+      ${cars}`;
   }
 
   function setScreen() {
@@ -2262,6 +2602,11 @@
       <p class="help">The first screen fits 12 squares: 4 across and 3 down. Widgets past that scroll. ${key === 'guest' ? 'Private widgets can’t be added to the Guest screen.' : ''}</p>
       <div class="panel" style="padding-block:4px">${list.map((id, i) => `<div class="ed-row"><span class="nm">${esc(WIDGET_INFO[id][0])}</span><span class="sz">${SIZE_LABEL[WIDGET_INFO[id][1]]}${WIDGET_INFO[id][2] ? ' · private' : ''}</span><button type="button" class="icon-btn" data-act="layout-move" data-i="${i}" data-dir="-1" aria-label="Move ${esc(WIDGET_INFO[id][0])} up" ${i === 0 ? 'disabled' : ''}>${icon('up')}</button><button type="button" class="icon-btn" data-act="layout-move" data-i="${i}" data-dir="1" aria-label="Move ${esc(WIDGET_INFO[id][0])} down" ${i === list.length - 1 ? 'disabled' : ''}>${icon('down')}</button><button type="button" class="icon-btn" data-act="layout-del" data-i="${i}" aria-label="Remove ${esc(WIDGET_INFO[id][0])}">${icon('x')}</button></div>`).join('') || '<div class="empty">No widgets.</div>'}</div>
       <div class="addrow">${avail.length ? `<select class="inline-input" id="layout-add">${avail.map((id) => `<option value="${id}">${esc(WIDGET_INFO[id][0])} (${SIZE_LABEL[WIDGET_INFO[id][1]]})</option>`).join('')}</select><button type="button" class="qbtn primary" data-act="layout-add">${icon('plus')}Add widget</button>` : ''}<button type="button" class="qbtn" data-act="layout-reset">Reset to default</button></div>
+      <div class="section-title">Countdown</div>
+      <div class="row2"><label class="field"><span>Label</span><input type="text" id="s-countdownLabel" data-set="countdownLabel" maxlength="60" value="${esc(S.countdownLabel)}" autocomplete="off"></label>
+        <label class="field"><span>Date</span><input type="date" id="s-countdownDate" data-set="countdownDate" value="${esc(S.countdownDate)}"></label></div>
+      <p class="help">The Countdown widget counts calendar days until this date in Pacific time. On the day it says Today. After that it counts the days since. The date and label stay on this iPad.</p>
+      ${teslaSettingsHTML()}
       <div class="section-title">Clock face and photo frame</div>
       <div class="row2"><label class="field"><span>Show the clock after</span>${sel('idleAfter', [[30, '30 seconds'], [60, '1 minute'], [120, '2 minutes'], [300, '5 minutes'], [600, '10 minutes'], [0, 'Never']], S.idleAfter)}</label>
         <label class="field"><span>Face</span>${sel('face', [['bold', 'Bold'], ['analog', 'Analog'], ['photos', 'Photo frame'], ['glance', 'Glance']], S.face)}</label></div>
@@ -2380,7 +2725,7 @@
     const lists = {};
     ['groceries', 'chores', 'reminders', 'board'].forEach((k) => { lists[k] = (LISTS[k] || []).map((i) => ({ text: i.text, who: nameOf(i.who), due: i.due || '', done: !!i.done })); });
     const meals = {};
-    Object.entries(MEALS).forEach(([d, m]) => { if (d === '_sample' || !m) return; const r = recipes.find((x) => x.id === m.recipe); meals[d] = { text: m.text || '', recipe: r ? r.title : '' }; });
+    Object.entries(MEALS).forEach(([d, m]) => { if (d === '_sample' || !m) return; const r = allRecipe(m.recipe); meals[d] = { text: m.text || '', recipe: r ? r.title : '' }; });
     return {
       bauderHome: 1,
       exported: new Date().toISOString(),
@@ -2417,7 +2762,11 @@
       else if (typeof v === typeof dv || (Array.isArray(dv) && Array.isArray(v))) S[k] = v;
     });
     if (st.modes && typeof st.modes === 'object') Object.keys(DEFAULT_MODES).forEach((id) => { if (st.modes[id] && typeof st.modes[id] === 'object') S.modes[id] = { ...S.modes[id], ...st.modes[id] }; });
-    if (st.layout && typeof st.layout === 'object') ['main', 'guest'].forEach((k) => { if (Array.isArray(st.layout[k])) S.layout[k] = st.layout[k].filter((w) => WIDGET_INFO[w] && (k === 'main' || !WIDGET_INFO[w][2])); });
+    if (st.layout && typeof st.layout === 'object') ['main', 'guest'].forEach((k) => { if (Array.isArray(st.layout[k])) S.layout[k] = layoutList(st.layout[k], k, k === 'guest'); });
+    const countdown = cleanCountdownSettings(S.countdownDate, S.countdownLabel);
+    S.countdownDate = countdown.date;
+    S.countdownLabel = countdown.label;
+    S.tesla = { cars: cleanTeslaCars(S.tesla && S.tesla.cars) };
     if (st.calendarOwners && typeof st.calendarOwners === 'object') Object.entries(st.calendarOwners).forEach(([cal, who]) => { const id = idOf(who); if (id) S.calendarOwners[cal] = id; });
     if (st.profile) { const id = /^guest$/i.test(st.profile) ? (S.people.find((p) => p.fixed) || {}).id : idOf(st.profile); if (id) S.profile = id; }
     if (!personById(S.profile)) S.profile = (members()[0] || S.people[0]).id;
@@ -2444,8 +2793,8 @@
     }
     if (Array.isArray(o.recipes)) {
       const fresh = o.recipes.filter((r) => r && r.title).map((r) => ({ id: uid(), title: String(r.title), ingredients: (r.ingredients || []).map(String), steps: (r.steps || []).map(String) }));
-      recipes = recipes.filter((r) => !r.sample && !fresh.some((f) => f.title.toLowerCase() === r.title.toLowerCase())).concat(fresh);
-      if (!recipes.length) recipes = [SAMPLE_RECIPE];
+      recipes = recipes.filter((r) => !r.sample && !LIB_RECIPES[r.id] && !fresh.some((f) => f.title.toLowerCase() === r.title.toLowerCase())).concat(fresh);
+      if (!recipes.length && !LIB_RECIPES['sample-cornbread']) recipes = [SAMPLE_RECIPE];
       saveRecipes();
       done.push('recipes');
     }
@@ -2454,7 +2803,7 @@
       Object.entries(o.meals).forEach(([d, m]) => {
         if (!isDay(d)) return;
         if (!m) { delete MEALS[d]; return; }
-        const r = m.recipe ? recipes.find((x) => x.title.toLowerCase() === String(m.recipe).toLowerCase()) : null;
+        const r = m.recipe ? recipeByTitle(m.recipe) : null;
         MEALS[d] = { text: String(m.text || ''), recipe: r ? r.id : '' };
       });
       MEALS._sample = false;
@@ -2815,6 +3164,7 @@
     },
     'recipe-del': (el) => {
       const id = el.dataset.id;
+      if (!recipes.some((r) => r.id === id)) return;
       if (APP.confirm !== 'del-' + id) { APP.confirm = 'del-' + id; renderApp(); return; }
       recipes = recipes.filter((r) => r.id !== id);
       saveRecipes();
@@ -2822,14 +3172,52 @@
       renderApp();
       toast('Recipe deleted');
     },
-    'recipe-groceries': (el) => { const r = recipes.find((x) => x.id === el.dataset.id); if (r) addIngredients(r.ingredients); },
+    'recipe-groceries': (el) => { const r = allRecipe(el.dataset.id); if (r) addIngredients(r.ingredients); },
     'meal-groceries': () => {
       const all = [];
-      for (let i = 0; i < 7; i++) { const m = MEALS[isoDay(i)]; const r = m && recipes.find((x) => x.id === m.recipe); if (r) all.push(...r.ingredients); }
+      mealWeekDates(new Date()).forEach((iso) => { const m = MEALS[iso]; const r = m && allRecipe(m.recipe); if (r) all.push(...r.ingredients); });
       if (!all.length) { toast('Pick recipes for this week first.'); return; }
       addIngredients(all);
     },
-    'chef-back': () => { APP.adding = false; APP.recipeId = null; APP.confirm = null; APP.ktab = 'recipes'; renderApp(); },
+    'meal-edit': (el) => {
+      const iso = el.dataset.day;
+      APP.mealEdit = iso;
+      APP.mealPath[iso] = mealPathForId(recipeRoots(), MEALS[iso]?.recipe || '');
+      renderApp();
+    },
+    'meal-cancel': (el) => {
+      const iso = el.dataset.day;
+      if (APP.mealEdit === iso) APP.mealEdit = null;
+      delete APP.mealPath[iso];
+      renderApp();
+    },
+    'meal-clear': (el) => {
+      const iso = el.dataset.day;
+      delete MEALS[iso];
+      if (APP.mealEdit === iso) APP.mealEdit = null;
+      delete APP.mealPath[iso];
+      MEALS._sample = false;
+      saveMeals();
+      renderAll();
+    },
+    'meal-save': (el) => {
+      const iso = el.dataset.day;
+      const id = mealChosenId(recipeRoots(), APP.mealPath[iso] || []);
+      const r = allRecipe(id);
+      if (!r) return;
+      MEALS[iso] = { text: r.title, recipe: r.id };
+      MEALS._sample = false;
+      if (APP.mealEdit === iso) APP.mealEdit = null;
+      delete APP.mealPath[iso];
+      saveMeals();
+      renderAll();
+    },
+    'chef-back': () => {
+      const adding = APP.adding;
+      APP.adding = false; APP.recipeId = null; APP.confirm = null;
+      if (adding) APP.ktab = 'recipes';
+      renderApp();
+    },
     step: (el) => { APP.step += +el.dataset.dir; renderApp(); },
     media: (el) => call('media_player', { play: 'media_play_pause', next: 'media_next_track', prev: 'media_previous_track' }[el.dataset.cmd], el.dataset.entity),
     'photo-sel': (el) => { const id = el.dataset.id; if (selectedPhotos.has(id)) selectedPhotos.delete(id); else selectedPhotos.add(id); APP.confirm = null; renderApp(); },
@@ -2914,6 +3302,14 @@
       mergeCalendar();
       renderAll();
     },
+    'tesla-warm': (el) => teslaCommand(+el.dataset.car, true),
+    'tesla-off': (el) => teslaCommand(+el.dataset.car, false),
+    'tesla-photo-clear': (el) => {
+      teslaPhotos[+el.dataset.car] = null;
+      saveTeslaPhotos();
+      renderHome();
+      if (APP.name === 'settings') renderApp();
+    },
     'feed-refresh': () => { if (!S.feedUrl) { toast('Add the feed address in Settings → Connections first.'); return; } toast('Refreshing…'); loadFeed(true); },
     'feed-save': () => { S.feedUrl = ($('#feed-url')?.value || '').trim(); saveSettings(); loadFeed(); toast(S.feedUrl ? 'Refreshing the feed…' : 'Feed removed. Showing sample data.'); },
     reset: () => {
@@ -2983,12 +3379,64 @@
     if (d.modeFlag) { const [mid, f] = d.modeFlag.split('|'); S.modes[mid][f] = t.checked; saveSettings(); renderApp(); return; }
     if (d.modeTemp) { const v = t.value.trim(); S.modes[d.modeTemp].temp = v === '' ? '' : clamp(+v, 45, 90); saveSettings(); renderApp(); return; }
     if (d.modeAfter) { S.modes[d.modeAfter].after = t.value; saveSettings(); renderApp(); return; }
-    if (d.mealText) { MEALS[d.mealText] = { ...(MEALS[d.mealText] || {}), text: t.value.trim() }; MEALS._sample = false; saveMeals(); renderAll(); return; }
-    if (d.mealRecipe) { MEALS[d.mealRecipe] = { ...(MEALS[d.mealRecipe] || {}), recipe: t.value }; MEALS._sample = false; saveMeals(); renderAll(); return; }
+    if (d.teslaPhoto != null) {
+      const index = +d.teslaPhoto;
+      const file = t.files && t.files[0];
+      t.value = '';
+      if (!file || !/^image\//.test(file.type)) { toast('Choose a picture.'); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const max = 960;
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          teslaPhotos[index] = canvas.toDataURL('image/jpeg', 0.82);
+          saveTeslaPhotos();
+          renderHome();
+          if (APP.name === 'settings') renderApp();
+        };
+        img.onerror = () => toast('That picture couldn’t be read.');
+        img.src = String(reader.result || '');
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    if (d.tesla) {
+      const m = /^(\d)-(name|climate|inside|battery|defrost)$/.exec(d.tesla);
+      if (!m) return;
+      const car = S.tesla.cars[+m[1]];
+      if (!car) return;
+      car[m[2]] = t.value;
+      S.tesla.cars = cleanTeslaCars(S.tesla.cars);
+      saveSettings();
+      renderHome();
+      return;
+    }
+    if (d.mealLevel != null && d.mealDay) {
+      const iso = d.mealDay;
+      const level = +d.mealLevel;
+      const path = (APP.mealPath[iso] || []).slice(0, level);
+      if (t.value) path.push(t.value);
+      APP.mealPath[iso] = path;
+      renderApp();
+      return;
+    }
     if (d.em) { EMERG[d.em] = t.value; saveEmerg(); renderHome(); return; }
     if (d.emc) { const c = EMERG.contacts.find((x) => x.id === d.emc); if (c) { c[d.f] = t.value.trim(); saveEmerg(); } return; }
     if (d.set) {
       const k = d.set;
+      if (k === 'countdownDate' || k === 'countdownLabel') {
+        const next = cleanCountdownSettings(k === 'countdownDate' ? t.value : S.countdownDate, k === 'countdownLabel' ? t.value : S.countdownLabel);
+        S.countdownDate = next.date;
+        S.countdownLabel = next.label;
+        saveSettings();
+        renderAll();
+        return;
+      }
       let v = t.type === 'checkbox' ? t.checked : t.value;
       if (['lat', 'lon', 'idleAfter', 'nightStart', 'nightEnd'].includes(k)) v = parseFloat(v);
       if ((k === 'lat' || k === 'lon') && !Number.isFinite(v)) return;

@@ -14,8 +14,6 @@
  *   CALENDARS  Optional. Comma-separated Google calendar names to include.
  *              Leave it out to include every calendar that's checked in Google Calendar.
  *   DAYS       Optional. How many days ahead to send (default 30).
- *   INSPECTIONS  Optional. JSON for the Inspections widget:
- *              {"completed":186,"goal":300,"scheduled":[{"date":"2026-10-26","time":"9:30 AM","name":"Annual inspection"}]}
  *   EV         Optional. JSON list for the EV Projects widget:
  *              [{"site":"Site A","status":"Permit approved"}]
  *
@@ -79,13 +77,12 @@ function buildFeed_(props) {
     out.errors.push('Google Calendar: ' + err.message);
   }
 
-  // Inspections and EV projects, typed into Script Properties
-  [['INSPECTIONS', 'inspections'], ['EV', 'ev']].forEach(function (pair) {
-    var v = props.getProperty(pair[0]);
-    if (!v) return;
-    try { out[pair[1]] = JSON.parse(v); }
-    catch (err) { out.errors.push(pair[0] + ' is not valid JSON. Check the quotes and brackets.'); }
-  });
+  // EV projects, typed into Script Properties as JSON
+  var evRaw = props.getProperty('EV');
+  if (evRaw) {
+    try { out.ev = JSON.parse(evRaw); }
+    catch (err) { out.errors.push('EV is not valid JSON. Check the quotes and brackets.'); }
+  }
 
   // Airbnb (or any booking site's iCal export)
   var listings = [];
@@ -162,7 +159,6 @@ function testFeed() {
   Logger.log('Calendars: %s', out.calendars.map(function (c) { return c.name; }).join(', ') || 'none');
   Logger.log('Events in the next %s days: %s', PropertiesService.getScriptProperties().getProperty('DAYS') || 30, out.events.length);
   out.listings.forEach(function (l) { Logger.log('%s: %s stays%s', l.name, l.stays.length, l.error ? ' (error: ' + l.error + ')' : ''); });
-  if (out.inspections) Logger.log('Inspections: %s of %s', out.inspections.completed, out.inspections.goal);
   if (out.ev) Logger.log('EV projects: %s', out.ev.length);
   if (out.errors.length) Logger.log('Problems: %s', out.errors.join(' | '));
 }
