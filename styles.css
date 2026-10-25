@@ -162,7 +162,8 @@ svg.i { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor;
 .topbar .spacer { flex: 1; }
 .greet { display: grid; gap: 2px; min-width: 0; }
 .greeting { font: 650 21px/1.15 var(--font-round); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13.5px; color: var(--fg-dim); min-width: 0; }
+.summary { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px 14px; font-size: 13.5px; color: var(--fg-dim); min-width: 0; overflow: hidden; white-space: nowrap; }
+.summary > span { flex: none; }
 .summary b { color: var(--fg); font-weight: 600; }
 .summary .sdot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: 1px; background: var(--good); }
 .summary .sdot.warn { background: var(--warn); }
@@ -471,6 +472,7 @@ div.tile-main { cursor: default; }
 .ico.home { background: linear-gradient(160deg, #ffb340, #e07a12); }
 .ico.cal { background: linear-gradient(160deg, #ff6b62, #d93025); }
 .ico.tasks { background: linear-gradient(160deg, #64b5ff, #2f7fd6); }
+.ico.airbnb { background: linear-gradient(160deg, #ff7a7f, #e0484e); }
 .ico.kitchen { background: linear-gradient(160deg, #6fcf7a, #1f9d4c); }
 .ico.music { background: linear-gradient(160deg, #ff7eb6, #d9367a); }
 .ico.security { background: linear-gradient(160deg, #3b4a44, #121a17); }
@@ -732,8 +734,9 @@ div.tile-main { cursor: default; }
   }
   .home > .w { min-height: 176px; }
   .cook, .two-col { grid-template-columns: 1fr; }
-  .appbtn { width: 54px; }
+  .appbtn { width: 50px; }
   .appbtn .ico { width: 46px; height: 46px; border-radius: 12px; }
+  .dock { gap: 6px; }
 }
 
 /* Phones */
@@ -770,3 +773,8 @@ div.tile-main { cursor: default; }
 .home .w .np .art { width: 46px; height: 46px; border-radius: 11px; }
 .home .w .rbtn { width: 36px; height: 36px; }
 .home .w .rbtn.play { width: 42px; height: 42px; }
+
+/* Airbnb widget and app */
+.w-bnb .task { min-height: 30px; }
+.w-bnb .check-btn { width: 22px; height: 22px; }
+.task .tx .muted { font-weight: 400; }

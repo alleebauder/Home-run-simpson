@@ -127,7 +127,7 @@
     emergency: ['Emergency info', 'small'],
     forecast: ['Forecast', 'tall'],
     timer: ['Timers', 'small'],
-    bnb: ['Airbnb', 'small', true],
+    bnb: ['Airbnb & cleaning', 'tall', true],
     insp: ['Inspections', 'small', true],
     ev: ['EV projects', 'small', true],
   };
@@ -137,10 +137,10 @@
     guest: ['time', 'status', 'emergency', 'home', 'kitchen', 'media', 'forecast', 'timer'],
   };
 
-  const APP_TITLES = { home: 'Home', cal: 'Calendar', tasks: 'Tasks', kitchen: 'Kitchen', music: 'Music', security: 'Security', board: 'Message Board', packages: 'Packages', energy: 'Energy', photos: 'Photos', emergency: 'Emergency', settings: 'Settings', assist: 'Assistant' };
-  const APP_ICONS = { home: 'home', cal: 'cal', tasks: 'check', kitchen: 'pot', music: 'music', security: 'shield', board: 'msg', packages: 'box', energy: 'bolt', photos: 'photo', emergency: 'sos', settings: 'gear', assist: 'sparkle' };
-  const DOCK = ['home', 'cal', 'tasks', 'kitchen', 'music', 'security', 'board', 'packages', 'energy', 'photos', 'emergency', 'settings'];
-  const PRIVATE_APPS = ['cal', 'tasks', 'board', 'packages'];
+  const APP_TITLES = { home: 'Home', cal: 'Calendar', tasks: 'Tasks', airbnb: 'Airbnb', kitchen: 'Kitchen', music: 'Music', security: 'Security', board: 'Message Board', packages: 'Packages', energy: 'Energy', photos: 'Photos', emergency: 'Emergency', settings: 'Settings', assist: 'Assistant' };
+  const APP_ICONS = { home: 'home', cal: 'cal', tasks: 'check', airbnb: 'key', kitchen: 'pot', music: 'music', security: 'shield', board: 'msg', packages: 'box', energy: 'bolt', photos: 'photo', emergency: 'sos', settings: 'gear', assist: 'sparkle' };
+  const DOCK = ['home', 'cal', 'tasks', 'airbnb', 'kitchen', 'music', 'security', 'board', 'packages', 'energy', 'photos', 'emergency', 'settings'];
+  const PRIVATE_APPS = ['cal', 'tasks', 'airbnb', 'board', 'packages'];
   const LIST_KINDS = [{ id: 'groceries', name: 'Groceries', icon: 'cart' }, { id: 'chores', name: 'Chores', icon: 'check' }, { id: 'reminders', name: 'Reminders', icon: 'bell' }];
   const HAZARDS = { smoke: 'Smoke', carbon_monoxide: 'Carbon monoxide', gas: 'Gas', heat: 'Heat', moisture: 'Water leak' };
 
@@ -159,6 +159,7 @@
     lat: 47.6732,
     lon: -117.2394,
     feedUrl: '',
+    cleanOnCal: true,
     idleAfter: 120,
     face: 'bold',
     nightMode: true,
@@ -335,14 +336,16 @@
 
   function sampleFeed() {
     return {
-      airbnb: [
-        { listing: 'Wall St', type: 'check-in', date: isoDay(0), time: '4:00 PM' },
-        { listing: 'Broadway', type: 'check-out', date: isoDay(1), time: '11:00 AM' },
-        { listing: 'Broadway', type: 'check-in', date: isoDay(1), time: '4:00 PM' },
-        { listing: 'Wall St', type: 'check-out', date: isoDay(3), time: '11:00 AM' },
+      listings: [
+        { name: 'Wall St', checkin: '16:00', checkout: '11:00', stays: [{ start: isoDay(-3), end: isoDay(0), phone4: '4417' }, { start: isoDay(0), end: isoDay(3), phone4: '2290' }, { start: isoDay(6), end: isoDay(9), phone4: '7713' }] },
+        { name: 'Broadway A', checkin: '15:00', checkout: '10:00', stays: [{ start: isoDay(-1), end: isoDay(2), phone4: '0581' }, { start: isoDay(5), end: isoDay(7), phone4: '3302' }] },
+        { name: 'Broadway B', checkin: '16:00', checkout: '11:00', stays: [{ start: isoDay(1), end: isoDay(4), phone4: '9124' }, { start: isoDay(4), end: isoDay(8), phone4: '6650' }] },
       ],
       inspections: { completed: 186, goal: 300, scheduled: [{ date: isoDay(1), time: '9:30 AM', name: 'Annual inspection' }, { date: isoDay(2), time: '1:00 PM', name: 'Re-inspection' }] },
       ev: [{ site: 'Site A', status: 'Permit approved' }, { site: 'Site B', status: 'In plan review' }, { site: 'Site C', status: 'Utility design' }],
+      events: [],
+      calendars: [],
+      errors: [],
     };
   }
 
@@ -698,39 +701,77 @@
   }
 
   // ======================================================= family calendar
-  const CAL = { events: [], sample: true, note: '' };
+  const CAL = { events: [], sample: true, note: '', haNote: '' };
+  let HA_EVENTS = [];
+  const AIRBNB_COLOR = '#ff5a5f';
+  function calName(cal) {
+    if (cal === 'airbnb') return 'Airbnb cleanings';
+    if (String(cal).startsWith('g:')) return cal.slice(2);
+    return entityName(cal);
+  }
   function calOwner(cal) {
+    if (cal === 'airbnb') return 'airbnb';
     if (S.calendarOwners[cal] && personById(S.calendarOwners[cal])) return S.calendarOwners[cal];
     if (!H.live && DEMO_CAL_OWNERS[cal] && personById(DEMO_CAL_OWNERS[cal])) return DEMO_CAL_OWNERS[cal];
-    const nm = (entityName(cal) + ' ' + cal).toLowerCase();
+    const nm = (calName(cal) + ' ' + cal).toLowerCase();
     const m = members().find((p) => nm.includes(p.name.toLowerCase()));
     return (m || sharedPerson() || {}).id || '';
   }
-  const evColor = (e) => pColor(calOwner(e.cal));
-  const evPerson = (e) => pName(calOwner(e.cal));
+  const evColor = (e) => (e.cal === 'airbnb' ? AIRBNB_COLOR : pColor(calOwner(e.cal)));
+  const evPerson = (e) => (e.cal === 'airbnb' ? 'Airbnb' : pName(calOwner(e.cal)));
 
+  // Home Assistant calendars, when connected.
   async function refreshCalendar() {
-    if (!H.live) { CAL.events = demoEvents(); CAL.sample = true; CAL.note = ''; scheduleRender(); return; }
-    CAL.sample = false;
-    const all = idsOf('calendar');
-    const cals = S.calendars.length ? S.calendars.filter((id) => all.includes(id)) : all;
-    if (!cals.length) { CAL.events = []; CAL.note = 'No calendars in Home Assistant yet. Add Google Calendar or CalDAV there and they appear here.'; scheduleRender(); return; }
-    const start = addDays(startOfDay(new Date()), -1), end = addDays(start, 30);
-    try {
-      const r = await haSend({ type: 'call_service', domain: 'calendar', service: 'get_events', target: { entity_id: cals }, service_data: { start_date_time: isoLocal(start), end_date_time: isoLocal(end) }, return_response: true });
-      const out = [];
-      Object.entries(r?.response || {}).forEach(([cal, v]) => {
-        (v.events || []).forEach((e) => {
-          const allDay = !String(e.start).includes('T');
-          out.push({ cal, title: e.summary || 'Untitled', location: e.location || '', allDay, start: allDay ? parseDay(e.start) : new Date(e.start), end: allDay ? parseDay(e.end) : new Date(e.end) });
-        });
-      });
-      out.sort((a, b) => a.start - b.start);
-      CAL.events = out;
-      CAL.note = '';
-    } catch (e) {
-      CAL.note = 'Couldn’t load calendars from Home Assistant. It needs version 2023.12 or newer.';
+    HA_EVENTS = [];
+    CAL.haNote = '';
+    if (H.live) {
+      const all = idsOf('calendar');
+      const sel = S.calendars.filter((id) => all.includes(id));
+      const cals = sel.length ? sel : all;
+      if (cals.length) {
+        const start = addDays(startOfDay(new Date()), -1), end = addDays(start, 32);
+        try {
+          const r = await haSend({ type: 'call_service', domain: 'calendar', service: 'get_events', target: { entity_id: cals }, service_data: { start_date_time: isoLocal(start), end_date_time: isoLocal(end) }, return_response: true });
+          Object.entries(r?.response || {}).forEach(([cal, v]) => {
+            (v.events || []).forEach((e) => {
+              const allDay = !String(e.start).includes('T');
+              HA_EVENTS.push({ cal, title: e.summary || 'Untitled', location: e.location || '', allDay, start: allDay ? parseDay(e.start) : new Date(e.start), end: allDay ? parseDay(e.end) : new Date(e.end) });
+            });
+          });
+        } catch (e) {
+          CAL.haNote = 'Couldn’t load calendars from Home Assistant. It needs version 2023.12 or newer.';
+        }
+      }
     }
+    mergeCalendar();
+  }
+
+  // Google calendars, from the feed.
+  function feedEvents() {
+    if (FEED.part.events) return [];
+    return (FEED.data.events || []).map((e) => {
+      const allDay = !!e.allDay || !String(e.start || '').includes('T');
+      const start = allDay ? parseDay(String(e.start).slice(0, 10)) : new Date(e.start);
+      let end = e.end ? (allDay ? parseDay(String(e.end).slice(0, 10)) : new Date(e.end)) : null;
+      if (!end || isNaN(end) || end <= start) end = allDay ? addDays(start, 1) : new Date(start.getTime() + 3600000);
+      return { cal: 'g:' + (e.cal || 'Google'), title: e.title || 'Busy', location: e.location || '', allDay, start, end };
+    }).filter((e) => !isNaN(e.start));
+  }
+
+  // Home Assistant + Google + Airbnb cleanings, or sample events when nothing is connected.
+  function mergeCalendar() {
+    const real = H.live || !FEED.part.events;
+    let evs = real ? [...HA_EVENTS, ...feedEvents()] : demoEvents();
+    if (real && S.calendars.length) evs = evs.filter((e) => S.calendars.includes(e.cal));
+    CAL.sample = !real;
+    CAL.note = '';
+    if (real && !evs.length) {
+      if (CAL.haNote && FEED.part.events) CAL.note = CAL.haNote;
+      else if (FEED.part.events && !idsOf('calendar').length) CAL.note = 'No calendars yet. Connect Google Calendar through the feed in Settings, or add calendars in Home Assistant.';
+    }
+    evs = evs.concat(cleaningEvents());
+    evs.sort((a, b) => a.start - b.start);
+    CAL.events = evs;
     scheduleRender();
   }
   const visibleEvents = () => CAL.events.filter((e) => !APP.calHide.has(calOwner(e.cal)));
@@ -809,32 +850,138 @@
   }
 
   // ============================================================ Bauder HQ
-  const FEED = { data: sampleFeed(), sample: true, note: '', updated: 0 };
+  const ALL_SAMPLE = () => ({ listings: true, insp: true, ev: true, events: true });
+  const FEED = { data: sampleFeed(), sample: true, part: ALL_SAMPLE(), note: '', updated: 0 };
   function normalizeFeed(j) {
+    if (!j || typeof j !== 'object') throw new Error('The feed didn’t send data');
+    if (j.error) throw new Error(String(j.error));
+    const s = sampleFeed();
+    const hasL = Array.isArray(j.listings), hasI = !!(j.inspections && typeof j.inspections === 'object'), hasE = Array.isArray(j.ev), hasC = Array.isArray(j.events);
     return {
-      airbnb: Array.isArray(j.airbnb) ? j.airbnb : [],
-      inspections: j.inspections && typeof j.inspections === 'object' ? j.inspections : { completed: 0, goal: 0, scheduled: [] },
-      ev: Array.isArray(j.ev) ? j.ev : [],
+      data: {
+        listings: hasL ? j.listings : s.listings,
+        inspections: hasI ? j.inspections : s.inspections,
+        ev: hasE ? j.ev : s.ev,
+        events: hasC ? j.events : [],
+        calendars: Array.isArray(j.calendars) ? j.calendars : [],
+        errors: Array.isArray(j.errors) ? j.errors : [],
+      },
+      part: { listings: !hasL, insp: !hasI, ev: !hasE, events: !hasC },
     };
   }
-  async function loadFeed() {
+  async function loadFeed(fresh) {
     const url = (S.feedUrl || '').trim();
-    if (!url) { FEED.data = sampleFeed(); FEED.sample = true; FEED.note = ''; scheduleRender(); return; }
+    if (!url) { FEED.data = sampleFeed(); FEED.part = ALL_SAMPLE(); FEED.sample = true; FEED.note = ''; mergeCalendar(); return; }
+    let msg = '';
     try {
-      const r = await fetch(url, { cache: 'no-store' });
+      const r = await fetch(fresh ? url + (url.includes('?') ? '&' : '?') + 'fresh=1' : url, { cache: 'no-store' });
       if (!r.ok) throw new Error('feed ' + r.status);
-      FEED.data = normalizeFeed(await r.json());
-      FEED.sample = false; FEED.note = ''; FEED.updated = Date.now();
-      store.set('feedCache', { data: FEED.data, at: FEED.updated });
+      let j;
+      try { j = await r.json(); } catch (e) { msg = 'The address didn’t return feed data. Check that you copied the web app link ending in /exec.'; throw e; }
+      try { j = normalizeFeed(j); } catch (e) { msg = e.message; throw e; }
+      FEED.data = j.data; FEED.part = j.part; FEED.sample = false; FEED.note = ''; FEED.updated = Date.now();
+      store.set('feedCache', { data: FEED.data, part: FEED.part, at: FEED.updated });
     } catch (e) {
       const c = store.get('feedCache', null);
-      if (c) { FEED.data = c.data; FEED.sample = false; FEED.updated = c.at; FEED.note = 'Couldn’t reach the feed. Showing the last data received.'; }
-      else { FEED.data = sampleFeed(); FEED.sample = true; FEED.note = 'Couldn’t reach the feed at that address. Showing sample data.'; }
+      if (c && c.part) { FEED.data = c.data; FEED.part = c.part; FEED.sample = false; FEED.updated = c.at; FEED.note = `${msg || 'Couldn’t reach the feed.'} Showing what loaded at ${fmtClock(new Date(c.at))}.`; }
+      else { FEED.data = sampleFeed(); FEED.part = ALL_SAMPLE(); FEED.sample = true; FEED.note = `${msg || 'Couldn’t reach the feed at that address.'} Showing sample data.`; }
     }
-    scheduleRender();
+    mergeCalendar();
     if (APP.name === 'settings') { const el = $('#feed-status'); if (el) el.textContent = feedStatusText(); }
+    if (APP.name === 'airbnb') renderApp();
   }
-  const feedStatusText = () => FEED.note || (FEED.sample ? 'No feed set. Widgets show sample data.' : `Updated ${fmtClock(new Date(FEED.updated))}.`);
+  function feedStatusText() {
+    if (FEED.note) return FEED.note;
+    if (FEED.sample) return 'No feed set. Airbnb, Inspections and EV widgets show sample data.';
+    const d = FEED.data, parts = [];
+    if (!FEED.part.events) parts.push(`${plural(d.calendars.length, 'Google calendar')} with ${plural(d.events.length, 'event')}`);
+    if (!FEED.part.listings) parts.push(d.listings.map((l) => `${l.name}: ${l.error ? 'error' : plural((l.stays || []).length, 'stay')}`).join(', '));
+    return `Updated ${fmtClock(new Date(FEED.updated))}. ${parts.join('. ')}${parts.length ? '.' : ''}${d.errors.length ? ' Problems: ' + d.errors.join('; ') : ''}`;
+  }
+
+  // ================================================================ Airbnb
+  function parseHM(t, defH) {
+    const m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])?\.?\s*m?\.?$/i.exec(String(t ?? '').trim());
+    if (!m) return { h: defH, m: 0 };
+    let h = +m[1];
+    if (m[3]) { const pm = /p/i.test(m[3]); if (pm && h < 12) h += 12; if (!pm && h === 12) h = 0; }
+    return { h: clamp(h, 0, 23), m: clamp(+(m[2] || 0), 0, 59) };
+  }
+  const atTime = (day, hm) => { const d = new Date(day); d.setHours(hm.h, hm.m, 0, 0); return d; };
+  const relLower = (d) => { const r = relDay(d); return r === 'Today' || r === 'Tomorrow' || r === 'Yesterday' ? r.toLowerCase() : r; };
+  const whenAt = (d) => `${relLower(d)} ${fmtClock(d)}`;
+
+  function listingsData() {
+    return (FEED.data.listings || []).map((l, i) => {
+      const name = l.name || `Listing ${i + 1}`;
+      const ci = parseHM(l.checkin, 16), co = parseHM(l.checkout, 11);
+      const stays = (l.stays || []).map((x) => {
+        const a = parseDay(String(x.start || '').slice(0, 10));
+        let b = parseDay(String(x.end || x.start || '').slice(0, 10));
+        if (isNaN(b) || b <= a) b = addDays(a, 1);
+        return { listing: name, start: a, end: b, inAt: atTime(a, ci), outAt: atTime(b, co), nights: Math.max(1, Math.round((b - a) / 86400000)), phone4: x.phone4 || '' };
+      }).filter((x) => !isNaN(x.start)).sort((x, y) => x.start - y.start);
+      return { name, error: l.error || '', ci, co, stays };
+    });
+  }
+
+  let CLEANED = store.get('cleaned', {});
+  // One cleaning per check-out. Yesterday's stays on the list until it's checked off.
+  function cleanings(days = 14) {
+    const today = startOfDay(new Date()), last = addDays(today, days), yesterday = addDays(today, -1);
+    const out = [];
+    listingsData().forEach((L) => {
+      L.stays.forEach((st, i) => {
+        if (st.end < yesterday || st.end > last) return;
+        const next = L.stays.find((x, j) => j > i && x.start >= st.end) || L.stays.find((x, j) => j !== i && x.start >= st.end && x !== st);
+        const c = { listing: L.name, date: st.end, outAt: st.outAt, next: next || null, sameDay: !!next && +next.start === +st.end, by: next ? next.inAt : null };
+        c.key = `${c.listing}|${isoOf(c.date)}`;
+        c.done = !!CLEANED[c.key];
+        if (st.end < today) { if (c.done) return; c.overdue = true; }
+        out.push(c);
+      });
+    });
+    return out.sort((a, b) => a.outAt - b.outAt);
+  }
+  const cleaningsToday = () => { const t = +startOfDay(new Date()); return cleanings(0).filter((c) => +c.date === t || c.overdue); };
+  function cleaningEvents() {
+    if (!S.cleanOnCal) return [];
+    return cleanings(31).filter((c) => !c.overdue).map((c) => ({
+      cal: 'airbnb', title: `Clean ${c.listing}${c.sameDay ? ' · same-day turnover' : ''}`, location: '', allDay: false,
+      start: c.outAt, end: c.sameDay && c.by > c.outAt ? c.by : new Date(c.outAt.getTime() + 3 * 3600000),
+    }));
+  }
+  function listingStatus(L) {
+    const now = new Date(), today = startOfDay(now);
+    const cur = L.stays.find((x) => x.inAt <= now && now < x.outAt);
+    if (cur) {
+      const after = L.stays.find((x) => x !== cur && x.start >= cur.end);
+      return { kind: 'occupied', label: 'Guests in', line: `Out ${whenAt(cur.outAt)}`, sub: after ? (+after.start === +cur.end ? 'Same-day turnover' : `Next guest ${relLower(after.start)}`) : 'No next guest yet' };
+    }
+    const next = L.stays.find((x) => x.inAt > now);
+    const outToday = L.stays.some((x) => +x.end === +today);
+    if (next && +next.start === +today) return { kind: 'turnover', label: outToday ? 'Turnover today' : 'Check-in today', line: `Next guest ${whenAt(next.inAt)}`, sub: `${plural(next.nights, 'night')}${next.phone4 ? ` · guest ••${next.phone4}` : ''}` };
+    if (next) return { kind: 'vacant', label: 'Vacant', line: `Next guest ${whenAt(next.inAt)}`, sub: `${plural(next.nights, 'night')}${next.phone4 ? ` · guest ••${next.phone4}` : ''}` };
+    return { kind: 'empty', label: 'No bookings', line: 'Nothing booked ahead', sub: '' };
+  }
+  const statusPill = (k) => (k === 'occupied' ? 'good' : k === 'turnover' ? 'warn' : '');
+  function cleanWhen(c, withDay) {
+    if (c.overdue) return 'From yesterday';
+    const day = withDay ? `${relDay(c.date) === 'Tomorrow' ? 'Tmrw' : c.date.toLocaleDateString(undefined, { weekday: 'short' })} ` : '';
+    return c.sameDay ? `${day}${fmtClock(c.outAt)}–${fmtClock(c.by)}` : `${day}after ${fmtClock(c.outAt)}`;
+  }
+  function cleanDetail(c) {
+    if (c.sameDay) return `Out ${fmtClock(c.outAt)} · next guest in ${fmtClock(c.by)}`;
+    if (c.next) return `Out ${fmtClock(c.outAt)} · next guest ${relLower(c.next.start)}`;
+    return `Out ${fmtClock(c.outAt)} · no next guest yet`;
+  }
+  function cleanRow(c, compact) {
+    const label = `${c.done ? 'Mark not cleaned' : 'Mark cleaned'}: ${c.listing}`;
+    const btn = `<button type="button" class="check-btn${c.done ? ' done' : ''}" data-act="clean-toggle" data-key="${esc(c.key)}" aria-label="${esc(label)}">${c.done ? icon('check') : ''}</button>`;
+    if (compact) return `<div class="task${c.done ? ' done' : ''}">${btn}<span class="tx">${esc(c.listing)}</span><span class="due${(c.sameDay || c.overdue) && !c.done ? ' over' : ''}">${esc(cleanWhen(c, compact === 'day'))}</span></div>`;
+    return `<div class="task${c.done ? ' done' : ''}">${btn}<span class="tx"><b>${esc(c.listing)}</b> · ${esc(c.overdue ? 'Yesterday' : relDay(c.date))}<span class="muted"> · ${esc(cleanDetail(c))}</span></span>${c.sameDay && !c.done ? '<span class="pill warn">Same-day</span>' : ''}</div>`;
+  }
+
   function evStage(item) {
     if (item.stage) return item.stage;
     const s = String(item.status || '');
@@ -1272,6 +1419,12 @@
       const re = new RegExp(`^(?:(?:run|start|activate|set|turn on|switch to|go to|start the|it's)\\s+)?(?:the\\s+)?${word}(?:\\s+mode)?$`);
       if (re.test(t) || (d.id === 'leaving' && /^(?:we're leaving|we are leaving|i'm leaving|i am leaving|leaving|heading out)$/.test(t))) { runMode(d.id); return `Running ${d.name}.`; }
     }
+    if (/airbnb|\bclean(?:ing|ings|ers?)?\b|turnovers?|check-?outs?|check-?ins?|\bguests?\b|\blistings?\b/.test(t)) {
+      if (!privateOK()) return 'Airbnb details are hidden in Guest mode.';
+      const cl = cleanings(14).filter((c) => !c.done);
+      const parts = cl.slice(0, 3).map((c) => `${c.listing} ${c.overdue ? 'from yesterday' : relLower(c.date)}${c.sameDay ? ` between ${fmtClock(c.outAt)} and ${fmtClock(c.by)}, a same-day turnover` : ` after ${fmtClock(c.outAt)}`}`);
+      return parts.length ? `Cleanings: ${parts.join('; ')}.` : 'No cleanings in the next two weeks.';
+    }
     if (/what(?:'s| is)? (?:next|on (?:the )?calendar|on today|happening|the plan)|(?:my|our) (?:schedule|day)|what do (?:we|i) have/.test(t)) {
       if (!privateOK()) return 'The calendar is hidden in Guest mode.';
       const ev = upcoming().slice(0, 3);
@@ -1292,7 +1445,7 @@
       return md ? `Tonight: ${md}.` : 'Nothing planned for dinner tonight yet. Add it in Kitchen.';
     }
     if ((m = /^(?:open|show(?: me)?|go to)\s+(?:the\s+|my\s+)?([a-z ]+?)(?:\s+app)?$/.exec(t))) {
-      const map = { kitchen: 'kitchen', recipes: 'kitchen', 'meal plan': 'kitchen', calendar: 'cal', tasks: 'tasks', lists: 'tasks', groceries: 'tasks', 'grocery list': 'tasks', chores: 'tasks', music: 'music', speakers: 'music', cameras: 'security', camera: 'security', security: 'security', photos: 'photos', settings: 'settings', emergency: 'emergency', 'emergency info': 'emergency', packages: 'packages', energy: 'energy', board: 'board', 'message board': 'board', messages: 'board', timers: 'kitchen', home: 'home', devices: 'home' };
+      const map = { airbnb: 'airbnb', cleaning: 'airbnb', cleanings: 'airbnb', kitchen: 'kitchen', recipes: 'kitchen', 'meal plan': 'kitchen', calendar: 'cal', tasks: 'tasks', lists: 'tasks', groceries: 'tasks', 'grocery list': 'tasks', chores: 'tasks', music: 'music', speakers: 'music', cameras: 'security', camera: 'security', security: 'security', photos: 'photos', settings: 'settings', emergency: 'emergency', 'emergency info': 'emergency', packages: 'packages', energy: 'energy', board: 'board', 'message board': 'board', messages: 'board', timers: 'kitchen', home: 'home', devices: 'home' };
       const a = map[m[1]];
       if (a) { setTimeout(() => openApp(a, a === 'kitchen' && /timer/.test(m[1]) ? { ktab: 'timers' } : {}), 500); return `Opening ${APP_TITLES[a]}.`; }
     }
@@ -1612,14 +1765,18 @@
   }
 
   function wBnb() {
-    const today = startOfDay(new Date());
-    const list = (FEED.data.airbnb || []).map((x) => ({ ...x, d: parseDay(x.date) })).filter((x) => x.d >= today).sort((a, b) => a.d - b.d).slice(0, 2);
-    const todayCount = (FEED.data.airbnb || []).filter((x) => +startOfDay(parseDay(x.date)) === +today).length;
-    const body = list.length
-      ? `<div class="big num">${todayCount}</div><div class="muted" style="font-size:13px">${todayCount === 1 ? 'turnover today' : 'turnovers today'}</div>` +
-        list.map((x) => `<div class="li"><span class="k">${esc(+startOfDay(x.d) === +today ? 'Today' : x.d.toLocaleDateString(undefined, { weekday: 'short' }))}</span><span class="v">${x.type === 'check-out' ? 'Out' : 'In'} · ${esc(x.listing || '')}${x.time ? ' · ' + esc(x.time) : ''}</span></div>`).join('')
-      : '<div class="muted">No check-ins or check-outs coming up.</div>';
-    return `<section class="${wcls('bnb')}" aria-label="Airbnb">${whead('key', 'Airbnb', sampleTag(FEED.sample))}<div class="w-body">${body}</div></section>`;
+    const head = whead('key', 'Airbnb', `${sampleTag(FEED.part.listings)}<button type="button" class="w-link" data-act="open" data-app="airbnb">All</button>`);
+    const Ls = listingsData();
+    if (!Ls.length) return `<section class="${wcls('bnb')}" aria-label="Airbnb">${head}<div class="muted" style="font-size:13.5px">Add your Airbnb calendar links to the feed to see stays and cleanings.</div></section>`;
+    const today = +startOfDay(new Date());
+    const now = cleaningsToday();
+    const later = cleanings(14).filter((c) => +c.date > today).slice(0, now.length > 1 ? 2 : 3);
+    const status = Ls.slice(0, 4).map((L) => { const st = listingStatus(L); return `<div class="li sb"><span class="k clamp1">${esc(L.name)}</span><span class="pill ${statusPill(st.kind)}">${esc(st.label)}</span></div>`; }).join('');
+    return `<section class="${wcls('bnb')}" aria-label="Airbnb">${head}<div class="w-body">
+      <div class="sub-label">Clean today${now.length ? ' · ' + now.length : ''}</div>
+      ${now.length ? now.map((c) => cleanRow(c, true)).join('') : '<div class="muted" style="font-size:13.5px">No check-outs today.</div>'}
+      ${later.length ? `<div class="sub-label" style="margin-top:4px">Coming up</div>${later.map((c) => cleanRow(c, 'day')).join('')}` : ''}
+      <div class="sub-label" style="margin-top:4px">Listings</div>${status}</div></section>`;
   }
 
   function wInsp() {
@@ -1630,7 +1787,7 @@
     const now = new Date();
     const weeks = Math.max(1, Math.ceil((new Date(now.getFullYear(), 11, 31) - now) / (7 * 86400000)));
     const left = Math.max(0, goal - done);
-    return `<section class="${wcls('insp')}" aria-label="Inspections">${whead('clip', 'Inspections', sampleTag(FEED.sample))}
+    return `<section class="${wcls('insp')}" aria-label="Inspections">${whead('clip', 'Inspections', sampleTag(FEED.part.insp))}
       <div class="ring-wrap"><svg class="ring" viewBox="0 0 100 100" role="img" aria-label="${Math.round(pct * 100)} percent of goal"><circle class="track" cx="50" cy="50" r="40"/><circle class="val" cx="50" cy="50" r="40" stroke-dasharray="${(pct * C).toFixed(1)} ${C.toFixed(1)}"/><text x="50" y="57" text-anchor="middle">${Math.round(pct * 100)}%</text></svg>
       <div style="min-width:0"><div class="big num">${done}</div><div class="muted" style="font-size:13px">of ${goal} this year</div><div class="faint" style="font-size:12.5px">${left ? `${Math.ceil(left / weeks)} a week to finish` : 'Goal met'}</div></div></div></section>`;
   }
@@ -1638,7 +1795,7 @@
   function wEv() {
     const list = (FEED.data.ev || []).slice(0, 3);
     const body = list.length ? list.map((x) => `<div class="li sb"><span class="k clamp1">${esc(x.site || 'Site')}</span><span class="pill ${evStage(x)}">${esc(x.status || '')}</span></div>`).join('') : '<div class="muted">No EV projects in the feed.</div>';
-    return `<section class="${wcls('ev')}" aria-label="EV projects">${whead('bolt', 'EV Projects', sampleTag(FEED.sample))}<div class="w-body">${body}</div></section>`;
+    return `<section class="${wcls('ev')}" aria-label="EV projects">${whead('bolt', 'EV Projects', sampleTag(FEED.part.ev))}<div class="w-body">${body}</div></section>`;
   }
 
   const RENDER = { time: wTime, status: wStatus, next: wNext, home: wHome, tasks: wTasks, cam: wCam, kitchen: wKitchen, media: wMedia, board: wBoard, energy: wEnergy, packages: wPackages, emergency: wEmergency, forecast: wForecast, timer: wTimer, bnb: wBnb, insp: wInsp, ev: wEv };
@@ -1656,8 +1813,13 @@
     const st = houseStatus();
     const parts = [`<span><span class="sdot ${st.level === 'good' ? '' : st.level}"></span><b>${esc(st.title)}</b></span>`];
     if (privateOK()) {
-      const e = upcoming()[0];
-      if (e) parts.push(`<span>Next: <b>${esc(e.title)}</b> ${esc(relDay(e.start) === 'Today' ? (e.allDay ? 'today' : fmtClock(e.start)) : relDay(e.start).toLowerCase())}</span>`);
+      const e = upcoming().filter((x) => x.cal !== 'airbnb')[0];
+      if (e) parts.push(`<span>Next: <b>${esc(e.title)}</b> ${esc(relDay(e.start) === 'Today' ? (e.allDay ? 'today' : fmtClock(e.start)) : relLower(e.start))}</span>`);
+      const cl = cleaningsToday().filter((c) => !c.done);
+      if (cl.length) {
+        const rush = cl.filter((c) => c.sameDay).sort((a, b) => a.by - b.by)[0];
+        parts.push(`<span>Clean: <b>${esc(cl.map((c) => c.listing).join(', '))}</b>${rush ? ' by ' + esc(fmtClock(rush.by)) : ''}</span>`);
+      }
     }
     const meal = mealFor(isoDay(0));
     if (meal) parts.push(`<span>Dinner: <b>${esc(meal)}</b></span>`);
@@ -1675,6 +1837,9 @@
       ${t ? `<button type="button" class="chip plain timer-pill" data-act="open" data-app="kitchen" data-ktab="timers">${icon('timer')}<span class="num" id="timer-pill-text">${fmtLeft(t.end - Date.now())}</span></button>` : ''}
       <button type="button" class="chip plain" data-act="open" data-app="assist" aria-label="Ask the household assistant">${icon('sparkle')}<span class="label">Ask</span></button>
       <button type="button" class="chip plain" data-act="open" data-app="settings" data-stab="connect"><span class="dot ${haDot()}"></span><span class="label">${haStatusLabel()}</span></button>`;
+    // Keep the summary on one line: drop the last items that don't fit.
+    const sm = $('#top .summary');
+    while (sm && sm.children.length > 1 && sm.scrollWidth > sm.clientWidth + 1) sm.lastElementChild.remove();
   }
 
   function renderModes() {
@@ -1781,6 +1946,7 @@
   function personChips() {
     const owners = Array.from(new Set(CAL.events.map((e) => calOwner(e.cal)))).filter(Boolean);
     const list = members().filter((p) => owners.includes(p.id));
+    if (owners.includes('airbnb')) list.push({ id: 'airbnb', name: 'Airbnb', color: AIRBNB_COLOR });
     if (list.length < 2) return '';
     return `<div class="pchips" role="group" aria-label="Show people">${list.map((p) => `<button type="button" class="pchip" data-act="cal-person" data-id="${p.id}" aria-pressed="${!APP.calHide.has(p.id)}"><span class="pdot" style="--c:${p.color}"></span>${esc(p.name)}</button>`).join('')}</div>`;
   }
@@ -1827,6 +1993,27 @@
     const done = list.some((i) => i.done);
     return `${seg}${add}${list.length ? `<div class="list-panel">${list.map((i) => taskRow(i, k, false)).join('')}</div>` : '<div class="empty">Nothing here yet.</div>'}
       ${done ? `<div class="quick" style="margin-top:12px"><button type="button" class="qbtn" data-act="task-clear" data-kind="${k}">Clear completed</button></div>` : ''}<p class="help" style="margin-top:10px">${src}</p>`;
+  }
+
+  // ---- Airbnb
+  function appAirbnb() {
+    const Ls = listingsData();
+    const now = new Date();
+    const intro = FEED.part.listings ? '<p class="help" style="margin-bottom:14px">Sample listings. Add your Airbnb calendar links to the feed (Settings → Connections) to see your real stays.</p>' : '';
+    const cards = Ls.map((L) => {
+      const st = listingStatus(L);
+      return `<div class="info-card"><div class="l">${esc(L.name)}</div><div><span class="pill ${statusPill(st.kind)}">${esc(st.label)}</span></div><div class="v">${esc(st.line)}</div>${st.sub ? `<div class="muted" style="font-size:13px">${esc(st.sub)}</div>` : ''}${L.error ? `<div class="crit-t" style="font-size:13px">${esc(L.error)}</div>` : ''}<div class="faint" style="font-size:12.5px">Check-in ${esc(fmtClock(atTime(now, L.ci)))} · check-out ${esc(fmtClock(atTime(now, L.co)))}</div></div>`;
+    }).join('');
+    const cl = cleanings(21);
+    const stays = Ls.flatMap((L) => L.stays).filter((x) => x.outAt > now).sort((a, b) => a.inAt - b.inAt).slice(0, 12);
+    const range = (x) => { const o = { weekday: 'short', month: 'short', day: 'numeric' }; return `${x.start.toLocaleDateString(undefined, o)} – ${x.end.toLocaleDateString(undefined, o)}`; };
+    const until = (d) => { const n = dayDiff(d); return n <= 0 ? `in ${Math.max(1, Math.round((d - now) / 3600000))} hr` : `in ${plural(n, 'day')}`; };
+    const stayRows = stays.map((x) => `<div class="pkg"><div class="m"><div class="t">${esc(x.listing)}</div><div class="s">${esc(range(x))} · ${plural(x.nights, 'night')}${x.phone4 ? ` · guest ••${esc(x.phone4)}` : ''}</div></div>${x.inAt <= now ? '<span class="pill good">Staying now</span>' : `<span class="muted num" style="font-size:13px;white-space:nowrap">${esc(until(x.inAt))}</span>`}</div>`).join('');
+    return `${intro}<div class="quick" style="margin-bottom:6px"><button type="button" class="qbtn" data-act="feed-refresh">Refresh now</button></div>
+      <div class="section-title">Right now</div>${cards ? `<div class="info-grid">${cards}</div>` : '<div class="empty">No listings in the feed yet.</div>'}
+      <div class="section-title">Cleaning schedule · next 3 weeks</div>${cl.length ? `<div class="list-panel">${cl.map((c) => cleanRow(c, false)).join('')}</div>` : '<div class="empty">No check-outs in the next 3 weeks.</div>'}
+      <div class="section-title">Upcoming stays</div>${stayRows ? `<div class="panel" style="padding-block:4px">${stayRows}</div>` : '<div class="empty">No upcoming stays.</div>'}
+      <p class="help" style="margin-top:14px">${esc(feedStatusText())} Check off a cleaning when it’s done. Cleanings ${S.cleanOnCal ? 'also show' : 'don’t show'} on the family calendar.</p>`;
   }
 
   // ---- Kitchen
@@ -2054,11 +2241,12 @@
       <div class="section-title">Weather</div>
       ${weathers.length ? `<label class="field"><span>Source</span>${sel('weatherEntity', [['', 'Open-Meteo (free, no account)'], ...weathers.map((w) => [w, 'Home Assistant · ' + entityName(w)])], S.weatherEntity)}</label>` : ''}
       <div class="row2"><label class="field"><span>Place name</span><input type="text" id="s-place" data-set="place" value="${esc(S.place)}"></label><label class="field"><span>Latitude</span><input type="number" id="s-lat" step="0.0001" data-set="lat" value="${esc(S.lat)}"></label><label class="field"><span>Longitude</span><input type="number" id="s-lon" step="0.0001" data-set="lon" value="${esc(S.lon)}"></label></div>
-      <div class="section-title">Bauder HQ feed</div>
-      <label class="field"><span>Feed address (JSON)</span><input type="url" id="feed-url" value="${esc(S.feedUrl)}" placeholder="http://umbrel.local:8686/data/bauder-hq.json" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-      <div class="quick"><button type="button" class="qbtn primary" data-act="feed-save">Save and refresh</button></div>
+      <div class="section-title">Google Calendar and Airbnb</div>
+      <label class="field"><span>Feed address</span><input type="url" id="feed-url" value="${esc(S.feedUrl)}" placeholder="https://script.google.com/macros/s/…/exec?key=…" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <div class="quick"><button type="button" class="qbtn primary" data-act="feed-save">Save and refresh</button>${S.feedUrl ? '<button type="button" class="qbtn" data-act="feed-refresh">Refresh now</button>' : ''}</div>
       <p class="help" id="feed-status">${esc(feedStatusText())}</p>
-      <p class="help">Drives the Airbnb, Inspections and EV Projects widgets. The README shows the format. Refreshes every 5 minutes.</p>`;
+      <label class="check"><input type="checkbox" id="s-cleanOnCal" data-set="cleanOnCal" ${S.cleanOnCal ? 'checked' : ''}><span>Show Airbnb cleanings on the family calendar</span></label>
+      <p class="help">A small script in your Google account reads your Google calendars and Airbnb calendar links and sends them here, so your private links never go to GitHub. Setup takes about 10 minutes: follow “Google Calendar and Airbnb” in the <a href="https://github.com/alleebauder/Home-run-simpson#google-calendar-and-airbnb" target="_blank" rel="noopener">README</a>. The same feed can also carry Inspections and EV project data. It refreshes every 5 minutes.</p>`;
   }
 
   function setScreen() {
@@ -2120,7 +2308,7 @@
   }
 
   function setFamily() {
-    const cals = idsOf('calendar');
+    const cals = [...idsOf('calendar'), ...(FEED.part.events ? [] : (FEED.data.calendars || []).map((c) => 'g:' + c.name))];
     const todos = idsOf('todo');
     const todoSel = (k, label) => `<label class="field"><span>${esc(label)}</span>${sel(k, [['', 'On this iPad'], ...todos.map((t) => [t, 'Home Assistant · ' + entityName(t)])], S.todo[k], 'data-todo')}</label>`;
     return `<div class="section-title">People</div>
@@ -2133,7 +2321,7 @@
       <label class="check"><input type="checkbox" id="s-guestOnIdle" data-set="guestOnIdle" ${S.guestOnIdle ? 'checked' : ''}><span>Switch to Guest whenever the clock face appears</span></label>
       <p class="help">The PIN is a household lock to keep guests out of private screens. It isn’t bank-grade security.</p>
       <div class="section-title">Calendars</div>
-      ${cals.length ? `<p class="help">Choose whose calendar each one is. Leave all unchecked to show every calendar.</p><div class="panel" style="padding-block:4px">${cals.map((c) => `<div class="ed-row"><label class="check nm"><input type="checkbox" data-cal="${esc(c)}" ${S.calendars.includes(c) ? 'checked' : ''}><span>${esc(entityName(c))}</span></label>${sel('owner-' + c, members().map((p) => [p.id, p.name]), calOwner(c), 'data-cal-owner')}</div>`).join('')}</div>` : '<p class="help">Calendars appear here once Home Assistant has them.</p>'}
+      ${cals.length ? `<p class="help">Choose whose calendar each one is. Leave all unchecked to show every calendar.</p><div class="panel" style="padding-block:4px">${cals.map((c) => `<div class="ed-row"><label class="check nm"><input type="checkbox" data-cal="${esc(c)}" ${S.calendars.includes(c) ? 'checked' : ''}><span>${esc(calName(c))}${c.startsWith('g:') ? ' <span class="faint">Google</span>' : ''}</span></label>${sel('owner-' + c, members().map((p) => [p.id, p.name]), calOwner(c), 'data-cal-owner')}</div>`).join('')}</div>` : '<p class="help">Calendars appear here once the Google Calendar feed or Home Assistant is connected.</p>'}
       <div class="section-title">Shared lists</div>
       <p class="help">${todos.length ? 'Use Home Assistant to-do lists so everyone’s phone sees the same groceries, chores, reminders and notes.' : 'Home Assistant to-do lists appear here once connected. Until then, lists are saved on this iPad.'}</p>
       ${todos.length ? `<div class="row2">${todoSel('groceries', 'Groceries')}${todoSel('chores', 'Chores')}${todoSel('reminders', 'Reminders')}${todoSel('board', 'Message board')}</div>` : ''}`;
@@ -2182,7 +2370,7 @@
       <p class="help faint">Bauder Home. Settings, lists, recipes, notes and photos are stored only on this device unless you chose Home Assistant lists.</p>`;
   }
 
-  const APPS = { home: appHome, cal: appCal, tasks: appTasks, kitchen: appKitchen, music: appMusic, security: appSecurity, board: appBoard, packages: appPackages, energy: appEnergy, photos: appPhotos, emergency: appEmergency, settings: appSettings, assist: appAssist };
+  const APPS = { home: appHome, cal: appCal, tasks: appTasks, airbnb: appAirbnb, kitchen: appKitchen, music: appMusic, security: appSecurity, board: appBoard, packages: appPackages, energy: appEnergy, photos: appPhotos, emergency: appEmergency, settings: appSettings, assist: appAssist };
 
   // ============================================================ idle faces
   const FACES = ['bold', 'analog', 'photos', 'glance'];
@@ -2244,8 +2432,10 @@
     const st = houseStatus();
     rows.push(`<div class="gl">${icon(st.level === 'good' ? 'shieldok' : 'alert')}<span>${esc(st.title)}</span></div>`);
     if (privateOK()) {
-      const e = upcoming()[0];
+      const e = upcoming().filter((x) => x.cal !== 'airbnb')[0];
       if (e) rows.push(`<div class="gl">${icon('cal')}<span>${esc(e.title)} <span class="muted">${esc(relDay(e.start))}${e.allDay ? '' : ' ' + esc(fmtClock(e.start))}</span></span></div>`);
+      const cl = cleaningsToday().filter((c) => !c.done);
+      if (cl.length) rows.push(`<div class="gl">${icon('key')}<span>Clean ${esc(cl.map((c) => c.listing).join(', '))} <span class="muted">${esc(cl.some((c) => c.sameDay) ? 'by ' + fmtClock(cl.filter((c) => c.sameDay).sort((a, b) => a.by - b.by)[0].by) : 'today')}</span></span></div>`);
     }
     const t = nextTimer();
     if (t) rows.push(`<div class="gl">${icon('timer')}<span>${esc(t.label)} <span class="muted num" data-left="${t.id}">${fmtLeft(t.end - Date.now())}</span></span></div>`);
@@ -2320,7 +2510,7 @@
     renderQueued = true;
     requestAnimationFrame(() => { renderQueued = false; renderAll(); });
   }
-  const LIVE_APPS = ['home', 'cal', 'tasks', 'music', 'security', 'energy', 'board', 'packages', 'kitchen'];
+  const LIVE_APPS = ['home', 'cal', 'tasks', 'airbnb', 'music', 'security', 'energy', 'board', 'packages', 'kitchen'];
   function renderAll() {
     renderTop();
     renderModes();
@@ -2328,6 +2518,7 @@
     renderHome();
     if (APP.name && LIVE_APPS.includes(APP.name) && !dragging) renderApp();
     if (idleOn && FACES[faceIdx] === 'glance') { const r = $('#idle .rows'); if (r) r.innerHTML = glanceRows(); }
+    sizeGrid();
   }
   function refreshCameraImages() {
     $$('img[data-cam]').forEach((img) => { const src = cameraSrc(img.dataset.cam); if (src) img.src = src; });
@@ -2572,6 +2763,17 @@
       haConnect();
     },
     'ha-disconnect': () => { S.haUrl = ''; S.haToken = ''; saveSettings(); haConnect(); renderApp(); toast('Disconnected. Showing sample devices.'); },
+    'clean-toggle': (el) => {
+      const k = el.dataset.key;
+      if (CLEANED[k]) delete CLEANED[k]; else CLEANED[k] = Date.now();
+      const cutoff = Date.now() - 60 * 86400000;
+      Object.keys(CLEANED).forEach((x) => { if (CLEANED[x] < cutoff) delete CLEANED[x]; });
+      store.set('cleaned', CLEANED);
+      if (CLEANED[k]) toast(`${k.split('|')[0]} marked cleaned`);
+      mergeCalendar();
+      renderAll();
+    },
+    'feed-refresh': () => { if (!S.feedUrl) { toast('Add the feed address in Settings → Connections first.'); return; } toast('Refreshing…'); loadFeed(true); },
     'feed-save': () => { S.feedUrl = ($('#feed-url')?.value || '').trim(); saveSettings(); loadFeed(); toast(S.feedUrl ? 'Refreshing the feed…' : 'Feed removed. Showing sample data.'); },
     reset: () => {
       if (APP.confirm !== 'reset') { APP.confirm = 'reset'; renderApp(); return; }
@@ -2646,6 +2848,7 @@
       S[k] = v;
       saveSettings();
       if (k === 'theme') applyTheme();
+      if (k === 'cleanOnCal') mergeCalendar();
       if (['lat', 'lon', 'place', 'weatherEntity'].includes(k)) loadWeather();
       if (k === 'face') faceIdx = Math.max(0, FACES.indexOf(v));
       renderAll();
@@ -2702,6 +2905,7 @@
     applyTheme();
     useDemo();
     CAL.events = demoEvents();
+    mergeCalendar();
     const wc = store.get('wxCache', null);
     if (wc) { WX.now = wc.now; WX.daily = (wc.daily || []).map((d) => ({ ...d, date: new Date(d.date) })); WX.place = wc.place; }
     loadPowerHistory(powerEntity());

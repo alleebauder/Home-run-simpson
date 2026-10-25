@@ -1,18 +1,34 @@
 {
-  "airbnb": [
-    { "listing": "Wall St", "type": "check-in", "date": "2026-10-25", "time": "4:00 PM" },
-    { "listing": "Broadway", "type": "check-out", "date": "2026-10-26", "time": "11:00 AM" }
+  "version": 1,
+  "updated": "2026-10-25T14:00:00.000Z",
+  "calendars": [
+    { "name": "alleebauder@gmail.com", "color": "#039be5" },
+    { "name": "Family", "color": "#33b679" }
+  ],
+  "events": [
+    { "cal": "alleebauder@gmail.com", "title": "Plan review meeting", "allDay": false, "start": "2026-10-26T16:00:00.000Z", "end": "2026-10-26T17:00:00.000Z", "location": "Station 1" },
+    { "cal": "Family", "title": "Trash and recycling", "allDay": true, "start": "2026-10-27", "end": "2026-10-28", "location": "" }
+  ],
+  "listings": [
+    {
+      "name": "Wall St",
+      "checkin": "16:00",
+      "checkout": "11:00",
+      "stays": [
+        { "start": "2026-10-22", "end": "2026-10-25", "phone4": "4417" },
+        { "start": "2026-10-25", "end": "2026-10-28", "phone4": "2290" }
+      ]
+    }
   ],
   "inspections": {
     "completed": 186,
     "goal": 300,
-    "scheduled": [
-      { "date": "2026-10-26", "time": "9:30 AM", "name": "Annual inspection" }
-    ]
+    "scheduled": [{ "date": "2026-10-26", "time": "9:30 AM", "name": "Annual inspection" }]
   },
   "ev": [
     { "site": "Site A", "status": "Permit approved" },
     { "site": "Site B", "status": "In plan review" },
     { "site": "Site C", "status": "Utility design", "stage": "warn" }
-  ]
+  ],
+  "errors": []
 }
