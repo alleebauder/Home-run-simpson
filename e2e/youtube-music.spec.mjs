@@ -27,7 +27,7 @@ test('YouTube Music panel opens in sample mode, saves playlists, and reopens saf
       await expect(page.locator('.ytm-saved-row')).toHaveCount(1);
     } else {
       await expect(page.locator('.ytm-saved-row')).toHaveCount(1);
-      await expect(page.locator('.ytm-saved-label')).toHaveText('Evening Worship');
+      await expect(page.locator('.ytm-saved-label-btn')).toHaveText('Evening Worship');
     }
     await page.locator('#sheet .done-btn').click();
     await expect(page.locator('#sheet')).toBeHidden();
