@@ -132,7 +132,7 @@ test('inspections are gone from the app and the countdown id is count', () => {
   assert.match(app, /insp:\s*'count'/);
   assert.doesNotMatch(app, /'insp'|wInsp|WIDGET_INFO[\s\S]{0,800}insp:/);
   assert.match(app, /main:\s*\[[^\]]*'\s*count\s*'/);
-  assert.match(sw, /bauder-home-v13/);
+  assert.match(sw, /bauder-home-v14/);
   assert.match(script, /EV/);
   assert.doesNotMatch(script, /INSPECTIONS/);
 });

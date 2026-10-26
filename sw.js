@@ -1,7 +1,7 @@
 /* Bauder Home service worker: keeps the app shell available offline.
    Only this app's own files are cached. Home Assistant, weather and feed
    requests always go to the network. Bump CACHE after changing files. */
-const CACHE = 'bauder-home-v13';
+const CACHE = 'bauder-home-v14';
 const SHELL = ['./', './index.html', './styles.css', './app.js', './recipes-library.js', './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

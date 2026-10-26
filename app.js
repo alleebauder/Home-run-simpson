@@ -380,6 +380,7 @@
     todo: { groceries: '', chores: '', reminders: '', board: '' },
     energy: { power: '', energy: '' },
     musicMain: '',
+    youtubeMusic: { player: '', playlists: [] },
     arrivals: {},
     awayMode: '',
     speak: true,
@@ -402,6 +403,15 @@
     ['main', 'guest'].forEach((k) => { s.layout[k] = layoutList(s.layout[k], k, false); });
     s.layout.main = withTeslaWidget(s.layout.main);
     s.tesla = { cars: cleanTeslaCars(s.tesla && s.tesla.cars) };
+    const yt = s.youtubeMusic && typeof s.youtubeMusic === 'object' ? s.youtubeMusic : {};
+    s.youtubeMusic = {
+      player: typeof yt.player === 'string' && /^media_player\.[a-z0-9_]+$/.test(yt.player) ? yt.player : '',
+      playlists: Array.isArray(yt.playlists) ? yt.playlists
+        .filter((p) => p && typeof p.label === 'string' && typeof p.url === 'string' && youtubeMusicUrl(p.url))
+        .slice(0, 12)
+        .map((p) => ({ label: p.label.trim().slice(0, 64), url: youtubeMusicUrl(p.url) }))
+        .filter((p) => p.label) : [],
+    };
     const wled = s.wled && typeof s.wled === 'object' ? s.wled : {};
     s.wled = {
       lights: Array.isArray(wled.lights) ? [...new Set(wled.lights.filter((id) => typeof id === 'string' && id.startsWith('light.')))].slice(0, 32) : [],
@@ -2094,6 +2104,37 @@
       <div class="quick">${rid ? `<button type="button" class="qbtn sm primary" data-act="recipe-open" data-id="${esc(rid)}">Start cooking</button>` : `<button type="button" class="qbtn sm" data-act="open" data-app="kitchen" data-ktab="plan">Plan meals</button>`}<button type="button" class="qbtn sm" data-act="open" data-app="kitchen" data-ktab="timers">Timers</button></div></section>`;
   }
 
+
+  /* YOUTUBE_MUSIC_FNS */
+  // Never embed credentials or attempt private YouTube Music scraping here.
+  // Saved links and playback selections use Home Assistant's Music Assistant.
+  const YTM_MUSIC_TYPES = ['track', 'album', 'artist', 'playlist'];
+  function youtubeMusicUrl(raw) {
+    if (typeof raw !== 'string' || raw.length > 500) return '';
+    let url;
+    try { url = new URL(raw.trim()); } catch (e) { return ''; }
+    if (url.protocol !== 'https:' || !['music.youtube.com', 'www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname.toLowerCase())) return '';
+    if (!['/playlist', '/watch'].includes(url.pathname.replace(/\/$/, ''))) return '';
+    const id = url.pathname === '/playlist' ? url.searchParams.get('list') : url.searchParams.get('v');
+    if (!id || !/^[a-zA-Z0-9_-]{10,160}$/.test(id)) return '';
+    const list = url.searchParams.get('list');
+    const hasList = list && /^[a-zA-Z0-9_-]{10,160}$/.test(list);
+    const base = 'https://music.youtube.com';
+    return url.pathname === '/playlist' ? base + '/playlist?list=' + encodeURIComponent(id) :
+      base + '/watch?v=' + encodeURIComponent(id) + (hasList ? '&list=' + encodeURIComponent(list) : '');
+  }
+  function youtubeMusicRequest(value, mediaType) {
+    if (!YTM_MUSIC_TYPES.includes(mediaType) || typeof value !== 'string') return null;
+    const raw = value.trim();
+    if (!raw || raw.length > 300) return null;
+    const isLink = /^https?:\/\//i.test(raw) || raw.includes('://');
+    const link = youtubeMusicUrl(raw);
+    if (isLink && !link) return null;
+    if (!link && /[<>]/.test(raw)) return null;
+    return { media_id: link || raw, media_type: link && link.includes('/playlist?') ? 'playlist' : mediaType, enqueue: 'play' };
+  }
+  /* /YOUTUBE_MUSIC_FNS */
+
   const speakerIds = () => idsOf('media_player');
   function mainSpeaker() {
     const ids = speakerIds();
@@ -2740,10 +2781,62 @@
   }
 
   // ---- Music
+  const YTM = { busy: false, text: '' };
+  function youtubeMusicPlayer() {
+    const id = S.youtubeMusic.player;
+    return H.live && id && H.states[id] && id.startsWith('media_player.') ? id : '';
+  }
+  async function youtubeMusicPlay(value, type) {
+    const player = youtubeMusicPlayer();
+    if (!player) {
+      toast('Connect Home Assistant and choose a Music Assistant speaker first.');
+      return false;
+    }
+    const request = youtubeMusicRequest(value, type);
+    if (!request) {
+      toast('Enter a song, artist, album, playlist, or valid YouTube Music link.');
+      return false;
+    }
+    if (YTM.busy) return false;
+    YTM.busy = true;
+    if (APP.name === 'music') renderApp();
+    let ok = false;
+    try {
+      ok = await call('music_assistant', 'play_media', player, request);
+      toast(ok ? 'Playback request sent to Music Assistant.' : 'Music Assistant could not play that selection.');
+    } finally {
+      YTM.busy = false;
+      if (APP.name === 'music') renderApp();
+    }
+    return ok;
+  }
+  function youtubeMusicPanel() {
+    const players = speakerIds();
+    const selected = youtubeMusicPlayer();
+    const options = players.map((id) => `<option value="${esc(id)}" ${S.youtubeMusic.player === id ? 'selected' : ''}>${esc(entityName(id))}</option>`).join('');
+    const saved = S.youtubeMusic.playlists.map((p, i) => `<div class="ytm-saved-row"><span class="ytm-saved-label">${esc(p.label)}</span><button type="button" class="qbtn sm" data-act="ytm-play-saved" data-index="${i}" ${!selected || YTM.busy ? 'disabled' : ''}>Play</button><a href="${esc(p.url)}" rel="noopener noreferrer" target="_blank" aria-label="Open ${esc(p.label)} in YouTube Music">Open</a><button type="button" class="qbtn sm" data-act="ytm-remove" data-index="${i}" aria-label="Remove ${esc(p.label)}">Remove</button></div>`).join('');
+    return `<section class="ytm-panel" aria-label="YouTube Music through Music Assistant">
+      <div class="ytm-heading"><div><div class="section-title">YouTube Music</div><p class="help">Play tracks and playlists on home speakers through Music Assistant.</p></div><a class="qbtn ytm-open" href="https://music.youtube.com/" target="_blank" rel="noopener noreferrer">Open YouTube Music</a></div>
+      ${H.live ? '<p class="ytm-note">Home Assistant is connected. Select a Music Assistant speaker below after you have set up YouTube Music in Music Assistant.</p>' : '<p class="ytm-note">Not connected. Set up Home Assistant and Music Assistant to play on household speakers. You can still open YouTube Music in a new tab.</p>'}
+      <label class="field"><span>Music Assistant speaker</span><select id="ytm-player" data-ytm-player aria-label="Music Assistant speaker"><option value="">Choose a speaker</option>${options}</select></label>
+      <div class="ytm-search">
+        <label class="field"><span>What would you like to play?</span><input id="ytm-query" type="text" maxlength="300" placeholder="Song, artist, album, playlist name or link" autocapitalize="off" autocomplete="off"></label>
+        <label class="field"><span>Type</span><select id="ytm-type" aria-label="Music to play"><option value="track">Song</option><option value="playlist">Playlist</option><option value="album">Album</option><option value="artist">Artist</option></select></label>
+        <button type="button" class="qbtn primary" data-act="ytm-play" ${!selected || YTM.busy ? 'disabled' : ''}>${YTM.busy ? 'Sending…' : 'Play'}</button>
+      </div>
+      <div class="ytm-library"><strong>Saved playlists</strong>${saved || '<p class="help">Save a YouTube Music playlist link below to launch it again with one tap.</p>'}</div>
+      <div class="ytm-add">
+        <label class="field"><span>Playlist name</span><input id="ytm-label" maxlength="64" placeholder="Family favorites"></label>
+        <label class="field"><span>YouTube Music playlist URL</span><input id="ytm-url" maxlength="500" type="url" placeholder="https://music.youtube.com/playlist?list=…"></label>
+        <button type="button" class="qbtn" data-act="ytm-add" ${S.youtubeMusic.playlists.length >= 12 ? 'disabled' : ''}>Save playlist</button>
+      </div>
+      <p class="help">Requires Music Assistant with YouTube Music configured. A YouTube Music Premium account is needed for the community provider. Selecting a speaker alone does not connect your YouTube account. Playing through an external YouTube Music tab is separate from home speaker playback.</p>
+    </section>`;
+  }
   function appMusic() {
     const ids = speakerIds();
-    if (!ids.length) return '<div class="empty">No speakers in Home Assistant yet. Sonos, AirPlay, Google Cast and most smart speakers show up after you add them there.</div>';
-    return `${!H.live ? '<p class="help" style="margin-bottom:14px">Sample speakers. Connect Home Assistant to control yours.</p>' : ''}<div class="speakers">${ids.map((id) => {
+    if (!ids.length) return youtubeMusicPanel() + '<div class="empty">No speakers in Home Assistant yet. Add Music Assistant and a compatible speaker first.</div>';
+    return `${youtubeMusicPanel()}${!H.live ? '<p class="help" style="margin-bottom:14px">Sample speakers. Connect Home Assistant to control yours.</p>' : ''}<div class="speakers">${ids.map((id) => {
       const s = H.states[id], a = s.attributes, playing = s.state === 'playing';
       const vol = Math.round((a.volume_level ?? 0) * 100);
       const src = Array.isArray(a.source_list) && a.source_list.length ? `<select data-source="${esc(id)}" aria-label="Source for ${esc(entityName(id))}">${a.source_list.map((x) => `<option ${x === a.source ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>` : '';
@@ -3621,6 +3714,41 @@
     },
     step: (el) => { APP.step += +el.dataset.dir; renderApp(); },
     media: (el) => call('media_player', { play: 'media_play_pause', next: 'media_next_track', prev: 'media_previous_track' }[el.dataset.cmd], el.dataset.entity),
+    'ytm-play': () => {
+      if (APP.name !== 'music') return;
+      youtubeMusicPlay($('#ytm-query')?.value || '', $('#ytm-type')?.value || 'track');
+    },
+    'ytm-add': () => {
+      if (APP.name !== 'music' || S.youtubeMusic.playlists.length >= 12) return;
+      const label = String($('#ytm-label')?.value || '').trim().slice(0, 64);
+      const url = youtubeMusicUrl($('#ytm-url')?.value || '');
+      if (!label || !url || !url.includes('/playlist?')) {
+        toast('Enter a name and a valid YouTube Music playlist link.');
+        return;
+      }
+      if (S.youtubeMusic.playlists.some((p) => p.url === url)) {
+        toast('That playlist is already saved.');
+        return;
+      }
+      S.youtubeMusic.playlists.push({ label, url });
+      saveSettings();
+      renderApp();
+      toast('Playlist saved on this iPad.');
+    },
+    'ytm-remove': (el) => {
+      if (APP.name !== 'music') return;
+      const index = Number(el.dataset.index);
+      if (!Number.isInteger(index) || index < 0 || index >= S.youtubeMusic.playlists.length) return;
+      S.youtubeMusic.playlists.splice(index, 1);
+      saveSettings();
+      renderApp();
+    },
+    'ytm-play-saved': (el) => {
+      if (APP.name !== 'music') return;
+      const index = Number(el.dataset.index);
+      const playlist = Number.isInteger(index) ? S.youtubeMusic.playlists[index] : null;
+      if (playlist) youtubeMusicPlay(playlist.url, 'playlist');
+    },
     'photo-sel': (el) => { const id = el.dataset.id; if (selectedPhotos.has(id)) selectedPhotos.delete(id); else selectedPhotos.add(id); APP.confirm = null; renderApp(); },
     'photo-del': async () => {
       if (APP.confirm !== 'photos') { APP.confirm = 'photos'; renderApp(); return; }
@@ -3752,6 +3880,14 @@
     const t = e.target;
     const d = t.dataset;
 
+    if (d.ytmPlayer != null) {
+      const id = t.value;
+      if (id && (!id.startsWith('media_player.') || !H.states[id])) return;
+      S.youtubeMusic.player = id;
+      saveSettings();
+      if (APP.name === 'music') renderApp();
+      return;
+    }
     if (d.wledLight) {
       if (!privateOK()) return;
       const id = d.wledLight;
