@@ -1158,3 +1158,87 @@ button.w:active { transform: scale(.99); }
     background: var(--glass-strong);
   }
 }
+
+
+/* Dedicated Home Assistant / WLED controls */
+.ico.wled { background: linear-gradient(145deg, #fa51b6, #6743c6); color: white; }
+.wled-intro {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px; padding: 4px 2px 18px;
+}
+.wled-intro strong { font: 750 clamp(23px, 2.4vw, 30px)/1.15 var(--font-round); letter-spacing: -.03em; }
+.wled-intro p { color: var(--fg-dim); font-size: 14px; margin: 6px 0 0; }
+.wled-intro .qbtn { min-height: 44px; }
+.wled-note {
+  padding: 11px 15px; margin: 0 0 16px; border-radius: 15px;
+  border: 1px solid var(--glass-stroke); background: var(--glass-strong);
+  font-size: 13px; color: var(--fg-dim);
+}
+.wled-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px; margin-bottom: 18px;
+}
+.wled-card {
+  min-width: 0; border-radius: 24px; overflow: hidden;
+  background: var(--glass-strong); border: 1px solid var(--glass-stroke);
+  box-shadow: var(--shadow);
+}
+.wled-card-head {
+  display: flex; gap: 12px; align-items: center; padding: 20px 18px;
+  border-bottom: 1px solid var(--hair);
+}
+.wled-indicator {
+  flex: none; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--fg-dim);
+}
+.wled-indicator.is-on { background: #28c96f; box-shadow: 0 0 0 5px rgba(40,201,111,.13); }
+.wled-card-name { min-width: 0; flex: 1; display: grid; gap: 5px; }
+.wled-card-name strong { overflow-wrap: anywhere; font: 725 17px/1.2 var(--font-round); }
+.wled-card-name span { font-size: 12px; color: var(--fg-dim); }
+.wled-power {
+  flex: none; min-height: 44px; min-width: 82px; padding: 0 13px;
+  border-radius: 14px; font-size: 13px; font-weight: 720;
+  border: 1px solid var(--glass-stroke); background: var(--glass);
+}
+.wled-power.is-on { color: var(--accent-ink); background: var(--accent); border-color: transparent; }
+.wled-power:disabled, .wled-select:disabled, .wled-swatch:disabled { opacity: .46; cursor: not-allowed; }
+.wled-card-body { display: grid; gap: 19px; padding: 20px 18px 23px; }
+.wled-field {
+  display: grid; gap: 10px; margin: 0; padding: 0; border: none;
+  min-width: 0; font-size: 13px; font-weight: 650;
+}
+.wled-field > span { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.wled-field b { font-variant-numeric: tabular-nums; }
+.wled-field legend { padding: 0 0 12px; font-size: 13px; font-weight: 650; }
+.wled-field input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 34px; touch-action: pan-y; }
+.wled-select {
+  width: 100%; min-height: 48px; padding: 10px 13px;
+  border-radius: 13px; border: 1px solid var(--glass-stroke);
+  background: var(--field); color: var(--fg); font-size: 14px;
+}
+.wled-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 11px; }
+.wled-swatch {
+  display: block; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--swatch);
+  border: 3px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--glass-stroke), 0 3px 8px rgba(0,0,0,.13);
+  transition: transform .14s ease;
+}
+.wled-swatch:active { transform: scale(.91); }
+.wled-power:focus-visible, .wled-swatch:focus-visible, .wled-select:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 3px;
+}
+.wled-setup {
+  margin: 22px 0; border: 1px solid var(--glass-stroke);
+  background: var(--glass-strong); padding: clamp(16px, 2vw, 24px); border-radius: 22px;
+  display: grid; gap: 14px;
+}
+.wled-setup h2 { font: 720 22px/1.25 var(--font-round); margin: 0; }
+.wled-choose { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 8px 16px; max-height: 300px; overflow: auto; }
+.wled-choose .check { margin: 0; min-height: 42px; }
+@media (max-width: 640px) {
+  .wled-grid { grid-template-columns: 1fr; gap: 12px; }
+  .wled-card-head { padding: 15px; }
+  .wled-card-body { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .wled-swatch { transition: none; } }
