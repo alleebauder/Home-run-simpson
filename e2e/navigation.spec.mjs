@@ -2,12 +2,31 @@ import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
   // No real Home Assistant connection or external weather services in QA.
+  const startupErrors = [];
+  page.on('pageerror', (error) => {
+    startupErrors.push(error.stack || error.message);
+    console.error('BAUDER PAGE ERROR:', error.stack || error.message);
+  });
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') console.error('BAUDER CONSOLE ERROR:', msg.text());
+  });
   await page.route('**/*', (route) => {
     const url = new URL(route.request().url());
     return url.hostname === '127.0.0.1' ? route.continue() : route.abort();
   });
   await page.goto('/');
-  await expect(page.locator('#dock [data-app="cal"]')).toBeVisible();
+  try {
+    await expect(page.locator('#dock [data-app="cal"]')).toBeVisible({ timeout: 3500 });
+  } catch (error) {
+    const details = await page.evaluate(() => ({
+      ready: document.readyState,
+      top: document.querySelector('#top')?.textContent?.slice(0, 180),
+      dock: document.querySelector('#dock')?.textContent?.slice(0, 180),
+      sheetHidden: document.querySelector('#sheet')?.hidden,
+      appInert: document.querySelector('.app')?.inert,
+    }));
+    throw new Error('Bauder app failed startup: ' + JSON.stringify({ details, startupErrors }) + ' (' + error.message + ')');
+  }
 });
 
 test('Calendar opens, switches all views, navigates dates and closes repeatedly', async ({ page }) => {
