@@ -44,6 +44,8 @@ jobs:
   browser-smoke:
     name: Browser navigation (Chromium and iPad WebKit)
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.0-noble
     timeout-minutes: 20
     steps:
       - name: Check out repository
@@ -56,9 +58,6 @@ jobs:
 
       - name: Install browser QA dependencies
         run: npm install --no-audit --no-fund
-
-      - name: Install Chromium and WebKit
-        run: npx playwright install --with-deps chromium webkit
 
       - name: Exercise actual navigation in browsers
         run: npm run test:e2e

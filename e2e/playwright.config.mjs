@@ -9,7 +9,7 @@ export default defineConfig({
   testMatch: '**/*.spec.mjs',
   timeout: 25_000,
   expect: { timeout: 8_000 },
-  retries: 1,
+  retries: 0,
   workers: 2,
   use: {
     baseURL: 'http://127.0.0.1:8765',
@@ -23,6 +23,7 @@ export default defineConfig({
     },
     {
       name: 'webkit-ipad-landscape',
+      repeatEach: 2,
       use: {
         browserName: 'webkit',
         viewport: { width: 1194, height: 834 },
