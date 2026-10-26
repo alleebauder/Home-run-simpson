@@ -3714,6 +3714,41 @@
     },
     step: (el) => { APP.step += +el.dataset.dir; renderApp(); },
     media: (el) => call('media_player', { play: 'media_play_pause', next: 'media_next_track', prev: 'media_previous_track' }[el.dataset.cmd], el.dataset.entity),
+    'ytm-play': () => {
+      if (APP.name !== 'music') return;
+      youtubeMusicPlay($('#ytm-query')?.value || '', $('#ytm-type')?.value || 'track');
+    },
+    'ytm-add': () => {
+      if (APP.name !== 'music' || S.youtubeMusic.playlists.length >= 12) return;
+      const label = String($('#ytm-label')?.value || '').trim().slice(0, 64);
+      const url = youtubeMusicUrl($('#ytm-url')?.value || '');
+      if (!label || !url || !url.includes('/playlist?')) {
+        toast('Enter a name and a valid YouTube Music playlist link.');
+        return;
+      }
+      if (S.youtubeMusic.playlists.some((p) => p.url === url)) {
+        toast('That playlist is already saved.');
+        return;
+      }
+      S.youtubeMusic.playlists.push({ label, url });
+      saveSettings();
+      renderApp();
+      toast('Playlist saved on this iPad.');
+    },
+    'ytm-remove': (el) => {
+      if (APP.name !== 'music') return;
+      const index = Number(el.dataset.index);
+      if (!Number.isInteger(index) || index < 0 || index >= S.youtubeMusic.playlists.length) return;
+      S.youtubeMusic.playlists.splice(index, 1);
+      saveSettings();
+      renderApp();
+    },
+    'ytm-play-saved': (el) => {
+      if (APP.name !== 'music') return;
+      const index = Number(el.dataset.index);
+      const playlist = Number.isInteger(index) ? S.youtubeMusic.playlists[index] : null;
+      if (playlist) youtubeMusicPlay(playlist.url, 'playlist');
+    },
     'photo-sel': (el) => { const id = el.dataset.id; if (selectedPhotos.has(id)) selectedPhotos.delete(id); else selectedPhotos.add(id); APP.confirm = null; renderApp(); },
     'photo-del': async () => {
       if (APP.confirm !== 'photos') { APP.confirm = 'photos'; renderApp(); return; }
@@ -3845,6 +3880,14 @@
     const t = e.target;
     const d = t.dataset;
 
+    if (d.ytmPlayer != null) {
+      const id = t.value;
+      if (id && (!id.startsWith('media_player.') || !H.states[id])) return;
+      S.youtubeMusic.player = id;
+      saveSettings();
+      if (APP.name === 'music') renderApp();
+      return;
+    }
     if (d.wledLight) {
       if (!privateOK()) return;
       const id = d.wledLight;
