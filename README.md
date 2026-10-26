@@ -226,3 +226,7 @@ Settings, lists, recipes, notes, packages, cleaning check-offs and emergency inf
 Calendar and all other app sheets now close immediately instead of using the previously fragile iPad animation. A failed app renderer automatically returns to Home and clears its inert state; external calendar events with invalid dates are discarded. Calendar redraws when the calendar data or calendar controls change, not for every unrelated Home Assistant sensor event.
 
 GitHub Actions runs unit tests and end-to-end navigation tests in Chromium and iPad-sized WebKit. The browser tests open/close Calendar repeatedly, switch day/week/list views, navigate dates, cycle all dock screens, exercise Assistant/Calendar transitions, and deliberately inject a Calendar rendering exception to verify that the home screen remains usable. These simulate iPad Safari behavior but are not a substitute for physical-device acceptance testing.
+
+### iPad Safari compositor safety
+
+Full-screen modals no longer blur an animated wallpaper. Touchscreen devices use translucent themed surfaces without multiple expensive live backdrop filters. The browser regression suite fails on the first WebKit error instead of passing on retry, and repeats the iPad navigation tests to catch intermittent failures.
