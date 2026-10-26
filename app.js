@@ -2238,7 +2238,7 @@
 
   const DOCK_LABELS = { board: 'Board' };
   function renderDock() {
-    $('#dock').innerHTML = DOCK.filter((a) => privateOK() || !PRIVATE_APPS.includes(a)).map((a) => `<button type="button" class="appbtn" data-act="open" data-app="${a}" aria-label="${esc(APP_TITLES[a])}"><span class="ico ${a}">${icon(APP_ICONS[a])}</span><span>${esc(DOCK_LABELS[a] || APP_TITLES[a])}</span></button>`).join('');
+    $('#dock').innerHTML = DOCK.filter((a) => privateOK() || !PRIVATE_APPS.includes(a)).map((a) => `<button type="button" class="appbtn" data-act="open" data-app="${a}" aria-label="${esc(APP_TITLES[a])}" ${APP.name === a ? 'aria-current="page"' : ''}><span class="ico ${a}">${icon(APP_ICONS[a])}</span><span>${esc(DOCK_LABELS[a] || APP_TITLES[a])}</span></button>`).join('');
   }
 
   // Rows are a third of the visible grid in landscape, so the first screen holds 12 squares.
@@ -2255,6 +2255,19 @@
     calView: 'week', calOffset: 0, calHide: new Set(), stab: 'connect', layoutKey: 'main', modeEdit: 'morning', emEdit: false,
   };
 
+  let sheetReturnFocus = null;
+  let sheetExitAnimation = null;
+
+  // Keep keyboard interaction inside the application dialog and return focus
+  // to the launching control after it closes (or the nearest surviving control).
+  function focusAfterSheet(closingName) {
+    const previous = sheetReturnFocus;
+    sheetReturnFocus = null;
+    const fallback = $('#dock [data-app="' + closingName + '"]') || $('#top [data-act="profiles"]');
+    const target = previous && previous.isConnected && !previous.closest('[hidden]') ? previous : fallback;
+    if (target && typeof target.focus === 'function') target.focus({ preventScroll: true });
+  }
+
   async function openApp(name, opts = {}) {
     if (!APP_TITLES[name]) return;
     if (homeEditMode) {
@@ -2270,12 +2283,23 @@
     }
     if (name !== APP.name) { APP.confirm = null; selectedPhotos.clear(); APP.emEdit = false; }
     if (name !== 'kitchen') { APP.recipeId = null; APP.adding = false; APP.mealEdit = null; APP.mealPath = {}; }
+    const dialog = $('#sheet');
+    const firstOpen = dialog.hidden || sheetExitAnimation !== null;
+    if (sheetExitAnimation) {
+      sheetExitAnimation.cancel();
+      sheetExitAnimation = null;
+      dialog.style.pointerEvents = '';
+    }
+    if (firstOpen) sheetReturnFocus = document.activeElement;
     APP.name = name;
     if (opts.ktab) { APP.ktab = opts.ktab; APP.recipeId = null; APP.adding = false; }
     if (opts.ttab) APP.ttab = opts.ttab;
     if (opts.stab) APP.stab = opts.stab;
-    $('#sheet').hidden = false;
+    dialog.hidden = false;
+    $('.app').inert = true;
     renderApp();
+    renderDock();
+    if (firstOpen && name !== 'assist') dialog.querySelector('.done-btn')?.focus({ preventScroll: true });
     if (name === 'photos') loadPhotos().then(() => { if (APP.name === 'photos') renderApp(); });
     if (name === 'cal' && H.live) refreshCalendar();
     if (name === 'tasks' || name === 'board') loadAllTodo();
@@ -2283,14 +2307,37 @@
     if (name === 'assist') setTimeout(() => $('#ask-input')?.focus(), 80);
   }
   function closeApp() {
+    if (!APP.name) return;
+    const closingName = APP.name;
+    const dialog = $('#sheet');
     APP.name = null;
     APP.recipeId = null;
     APP.adding = false;
     APP.mealEdit = null;
     APP.mealPath = {};
-    $('#sheet').hidden = true;
-    $('#sheet').innerHTML = '';
     renderAll();
+    const finish = () => {
+      dialog.hidden = true;
+      dialog.innerHTML = '';
+      dialog.style.pointerEvents = '';
+      $('.app').inert = false;
+      focusAfterSheet(closingName);
+    };
+    if (typeof dialog.animate !== 'function' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      finish();
+      return;
+    }
+    dialog.style.pointerEvents = 'none';
+    const animation = dialog.animate([
+      { opacity: 1, transform: 'translateY(0) scale(1)' },
+      { opacity: 0, transform: 'translateY(16px) scale(.992)' },
+    ], { duration: 190, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' });
+    sheetExitAnimation = animation;
+    animation.finished.then(() => {
+      if (sheetExitAnimation !== animation) return;
+      sheetExitAnimation = null;
+      finish();
+    }).catch(() => { /* A new app may cancel the exit transition. */ });
   }
 
   function renderApp() {
@@ -2300,6 +2347,7 @@
     const keep = {};
     $$('input[id], textarea[id], select[id]', el).forEach((f) => { if (f.type !== 'file' && f.type !== 'checkbox' && f.type !== 'range' && f.tagName !== 'SELECT') keep[f.id] = f.value; });
     const focusId = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : '';
+    const focusDone = document.activeElement === el.querySelector('.done-btn');
     const scroll = $('.sheet-body', el)?.scrollTop || 0;
 
     let title = APP_TITLES[APP.name];
@@ -2311,10 +2359,11 @@
       if (APP.adding) title = 'Add a recipe';
     }
     const body = APPS[APP.name]();
-    el.innerHTML = `<div class="sheet-head">${lead}<h1>${esc(title)}</h1><span class="spacer"></span><button type="button" class="done-btn" data-act="close">Done</button></div><div class="sheet-body">${body}</div>`;
+    el.innerHTML = `<div class="sheet-head">${lead}<h1 id="sheet-title">${esc(title)}</h1><span class="spacer"></span><button type="button" class="done-btn" data-act="close" aria-label="Close ${esc(title)} and return home">Done</button></div><div class="sheet-body">${body}</div>`;
 
     Object.entries(keep).forEach(([id, v]) => { const f = document.getElementById(id); if (f && el.contains(f) && f.value !== v && !/^(ha-url|ha-token|feed-url)$/.test(id)) f.value = v; });
-    if (focusId) { const f = document.getElementById(focusId); if (f && el.contains(f)) f.focus(); }
+    if (focusId) { const f = document.getElementById(focusId); if (f && el.contains(f)) f.focus({ preventScroll: true }); }
+    else if (focusDone) el.querySelector('.done-btn')?.focus({ preventScroll: true });
     const sb = $('.sheet-body', el);
     if (sb) sb.scrollTop = APP.name === 'assist' ? sb.scrollHeight : scroll;
   }
@@ -3611,6 +3660,22 @@
   document.addEventListener('keydown', (e) => {
     lastTouch = Date.now();
     if (idleOn) { exitIdle(); return; }
+    if (e.key === 'Tab' && APP.name && !$('#sheet').hidden && $('#pin').hidden && $('#hazard').hidden && $('#bell').hidden) {
+      const dialog = $('#sheet');
+      const controls = $('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex="0"]', dialog)
+        .filter((el) => !!el.getClientRects().length);
+      if (controls.length) {
+        const first = controls[0], last = controls[controls.length - 1];
+        if (e.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+      return;
+    }
     if (e.key === 'Escape') {
       if (!$('#pin').hidden) actions['pin-cancel']();
       else if (!$('#pop').hidden) $('#pop').hidden = true;
