@@ -1680,7 +1680,7 @@
     Explore: ["Open cameras", "Open energy", "Open music", "Open photos", "Open emergency info", "What's the weather?"],
   };
   function assistantPresets(category, allowPrivate) {
-    const privateQueries = /(?:calendar|tasks|groceries|message board|airbnb|cleanings)/i;
+    const privateQueries = /(?:calendar|tasks|groceries|message board|airbnb|cleanings|what.s next today)/i;
     const chosen = ASSIST_PRESETS[category] || ASSIST_PRESETS.Everyday;
     return allowPrivate ? chosen : chosen.filter((query) => !privateQueries.test(query));
   }
