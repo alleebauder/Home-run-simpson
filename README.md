@@ -220,3 +220,9 @@ The backup leaves out the Home Assistant token and PIN unless you tick the box. 
 | `docker-compose.yml`, `umbrel/` | Self-hosting on Umbrel |
 
 Settings, lists, recipes, notes, packages, cleaning check-offs and emergency info are saved in the iPad's browser storage, and photos in its IndexedDB, unless you chose Home Assistant lists. Nothing is stored in this repo or sent anywhere except the Home Assistant, weather (Open-Meteo) and feed addresses you set. Your Airbnb links and feed key live in your Google Apps Script settings, not here.
+
+## Reliability and regression testing
+
+Calendar and all other app sheets now close immediately instead of using the previously fragile iPad animation. A failed app renderer automatically returns to Home and clears its inert state; external calendar events with invalid dates are discarded. Calendar redraws when the calendar data or calendar controls change, not for every unrelated Home Assistant sensor event.
+
+GitHub Actions runs unit tests and end-to-end navigation tests in Chromium and iPad-sized WebKit. The browser tests open/close Calendar repeatedly, switch day/week/list views, navigate dates, cycle all dock screens, exercise Assistant/Calendar transitions, and deliberately inject a Calendar rendering exception to verify that the home screen remains usable. These simulate iPad Safari behavior but are not a substitute for physical-device acceptance testing.
