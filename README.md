@@ -4,9 +4,35 @@ A home command center for iPad, modeled on Apple's HomeView. The main screen ans
 
 It's a web app that runs on iPadOS, not a replacement operating system. There's no build step. You add it to the iPad's home screen and it runs full screen. Until Home Assistant and the Google Calendar and Airbnb feed are connected, every widget shows sample data tagged **Sample**.
 
-### Assistant reopen fix
+### Assistant navigation reliability
 
-The Assistant dialog's exit animation is cancelled and fully cleaned up after it closes. This prevents a Web Animations API `fill: forwards` opacity value from keeping the next Assistant session invisible and blocking interaction on iPad. A fast reopen during the closing animation cancels the exit safely. This does **not** restart Home Assistant: each new request still starts a fresh AI conversation.
+Full-screen app dialogs close immediately without a persistent animation, so reopening the Assistant or Calendar does not leave the home screen blocked. Every Assistant request still starts a new Home Assistant AI conversation.
+
+## WLED LED-strip controls
+
+Bauder Home has an **LED Strips** app in its dock. It controls WLED strips through the existing Home Assistant WebSocket connection—**not** directly over WLED's local unauthenticated HTTP API. This works with HTTPS-hosted copies of Bauder Home when your Home Assistant address is also reachable securely.
+
+### Connect WLED
+
+1. Install WLED 0.14.0 or newer on the LED controller and connect it to the same reachable network as Home Assistant.
+2. In **Home Assistant → Settings → Devices & services**, add the **WLED** integration (Home Assistant may already have discovered it). Confirm the device appears as a light entity. Each WLED segment can have its own light entity.
+3. In Bauder Home, connect Home Assistant under **Settings → Connections**, if not already connected.
+4. Open **LED Strips** in the bottom app dock. Lights whose entity IDs or names include WLED / LED strip are suggested automatically.
+5. Tap **Configure strips** to select the exact light entities you want displayed, including devices with custom names. If the preset menu does not appear, select the associated WLED preset select entity for each strip. Configuration is saved locally on your iPad.
+
+### Supported actions
+
+- On/off and brightness (1–100%) using `light.turn_on` / `light.turn_off`.
+- One-tap RGB color swatches for light entities reporting RGB/HS/XY support.
+- Built-in WLED effects from each light's current Home Assistant `effect_list`.
+- WLED saved presets via `select.select_option` on the corresponding preset select entity. If the light is off, it is switched on **before** applying the preset, so the preset is not reset afterward.
+- Multiple strips and WLED segments with independent controls. A demo strip is shown when Home Assistant is not connected; demo actions do not control actual devices.
+
+**Limitations:** WLED palette, speed, intensity, and secondary/tertiary effect colors are not directly adjustable in this initial screen; use WLED to save them as presets, then run those presets from Bauder Home. Some WLED effects require firmware features that the specific controller may lack. Guest profiles can use lights but only family profiles can change the selected strip/preset configuration.
+
+**Security:** Bauder Home does not request or store WLED device credentials or IP addresses. It reuses the Home Assistant token kept on your iPad. Do not expose WLED HTTP endpoints publicly.
+
+Source: [Home Assistant WLED integration](https://www.home-assistant.io/integrations/wled).
 
 ## Features
 
