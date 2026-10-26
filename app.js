@@ -2386,16 +2386,31 @@
       return;
     }
     dialog.style.pointerEvents = 'none';
-    const animation = dialog.animate([
-      { opacity: 1, transform: 'translateY(0) scale(1)' },
-      { opacity: 0, transform: 'translateY(16px) scale(.992)' },
-    ], { duration: 190, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' });
-    sheetExitAnimation = animation;
-    animation.finished.then(() => {
-      if (sheetExitAnimation !== animation) return;
-      sheetExitAnimation = null;
+    let animation;
+    try {
+      animation = dialog.animate([
+        { opacity: 1, transform: 'translateY(0) scale(1)' },
+        { opacity: 0, transform: 'translateY(16px) scale(.992)' },
+      ], { duration: 190, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' });
+    } catch (e) {
+      // If Safari cannot animate this panel, close it normally instead of
+      // leaving an unclickable full-screen overlay.
       finish();
-    }).catch(() => { /* A new app may cancel the exit transition. */ });
+      return;
+    }
+    sheetExitAnimation = animation;
+    const settle = () => {
+      if (sheetExitAnimation !== animation) return; // Reopened while closing.
+      sheetExitAnimation = null;
+      // WAAPI fill:'forwards' survives hiding the element. Without cancel(),
+      // the NEXT Assistant open stays at opacity:0 despite being interactive.
+      animation.cancel();
+      finish();
+    };
+    animation.finished.then(settle).catch(() => {
+      // An unexpected cancellation must not leave the home screen inert.
+      if (sheetExitAnimation === animation) settle();
+    });
   }
 
   function renderApp() {
