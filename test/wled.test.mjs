@@ -68,7 +68,7 @@ test('WLED uses HA light/select services and cannot silently call a local WLED I
   assert.match(s, /call\('light', 'turn_on', id, \{ effect \}\)/);
   assert.match(s, /call\('select', 'select_option', preset, \{ option \}\)/);
   assert.match(s, /if \(st\.state !== 'on' && !await call\('light', 'turn_on', id\)\) return/);
-  assert.match(s, /S\.wled = \{/);
+  assert.match(s, /s\.wled = \{/);
   assert.doesNotMatch(s, /fetch\(.+\/json\/state/);
   assert.match(read('styles.css'), /\.wled-swatch:focus-visible/);
 });
