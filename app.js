@@ -976,6 +976,10 @@
       else if (FEED.part.events && !idsOf('calendar').length) CAL.note = 'No calendars yet. Connect Google Calendar through the feed in Settings, or add calendars in Home Assistant.';
     }
     evs = evs.concat(cleaningEvents());
+    // Drop corrupt or incomplete external events before they reach the UI.
+    // Invalid dates otherwise throw when Calendar formats them.
+    evs = evs.filter((e) => e && e.start instanceof Date && e.end instanceof Date &&
+      Number.isFinite(e.start.getTime()) && Number.isFinite(e.end.getTime()) && e.end > e.start);
     evs.sort((a, b) => a.start - b.start);
     CAL.events = evs;
     scheduleRender();
@@ -2323,6 +2327,27 @@
     if (target && typeof target.focus === 'function') target.focus({ preventScroll: true });
   }
 
+  function recoverFailedApp(error, name = APP.name) {
+    // Important: do not leave the home view inert if any app (including
+    // Calendar) throws while being rendered or updated by live data.
+    console.error('Bauder Home could not open ' + (name || 'app'), error);
+    const dialog = $('#sheet');
+    if (sheetExitAnimation) {
+      const animation = sheetExitAnimation;
+      sheetExitAnimation = null;
+      try { animation.cancel(); } catch (_) { /* already finished */ }
+    }
+    APP.name = null;
+    dialog.hidden = true;
+    dialog.innerHTML = '';
+    dialog.style.pointerEvents = '';
+    $('.app').inert = false;
+    // Reset focus and dock even when the previous app was partially drawn.
+    try { renderDock(); } catch (e) { console.error('Dock recovery failed', e); }
+    focusAfterSheet(name);
+    toast((APP_TITLES[name] || 'That screen') + ' could not load. Home is still available.');
+  }
+
   async function openApp(name, opts = {}) {
     if (!APP_TITLES[name]) return;
     if (homeEditMode) {
@@ -2355,10 +2380,17 @@
     dialog.hidden = false;
     $('.app').inert = true;
     renderApp();
+    if (APP.name !== name) return; // The error boundary restored Home.
     renderDock();
     if (firstOpen && name !== 'assist') dialog.querySelector('.done-btn')?.focus({ preventScroll: true });
     if (name === 'photos') loadPhotos().then(() => { if (APP.name === 'photos') renderApp(); });
-    if (name === 'cal' && H.live) refreshCalendar();
+    if (name === 'cal' && H.live) {
+      refreshCalendar().catch((error) => {
+        console.error('Calendar refresh failed', error);
+        CAL.haNote = 'Could not refresh the calendar. Check Home Assistant and try again.';
+        if (APP.name === 'cal') renderApp();
+      });
+    }
     if (name === 'tasks' || name === 'board') loadAllTodo();
     if (name === 'energy') { EN.at = {}; loadPowerHistory(powerEntity()); }
     if (name === 'assist') setTimeout(() => $('#ask-input')?.focus(), 80);
@@ -2431,7 +2463,13 @@
       if (APP.recipeId) title = allRecipe(APP.recipeId)?.title || title;
       if (APP.adding) title = 'Add a recipe';
     }
-    const body = APPS[APP.name]();
+    let body;
+    try {
+      body = APPS[APP.name]();
+    } catch (error) {
+      recoverFailedApp(error, APP.name);
+      return;
+    }
     el.innerHTML = `<div class="sheet-head">${lead}<h1 id="sheet-title">${esc(title)}</h1><span class="spacer"></span><button type="button" class="done-btn" data-act="close" aria-label="Close ${esc(title)} and return home">Done</button></div><div class="sheet-body">${body}</div>`;
 
     Object.entries(keep).forEach(([id, v]) => { const f = document.getElementById(id); if (f && el.contains(f) && f.value !== v && !/^(ha-url|ha-token|feed-url)$/.test(id)) f.value = v; });
