@@ -303,9 +303,40 @@
   }
   /* /HOME_LAYOUT_FNS */
 
-  const APP_TITLES = { home: 'Home', cal: 'Calendar', tasks: 'Tasks', airbnb: 'Airbnb', kitchen: 'Kitchen', music: 'Music', security: 'Security', board: 'Message Board', packages: 'Packages', energy: 'Energy', photos: 'Photos', emergency: 'Emergency', settings: 'Settings', assist: 'Assistant' };
-  const APP_ICONS = { home: 'home', cal: 'cal', tasks: 'check', airbnb: 'key', kitchen: 'pot', music: 'music', security: 'shield', board: 'msg', packages: 'box', energy: 'bolt', photos: 'photo', emergency: 'sos', settings: 'gear', assist: 'sparkle' };
-  const DOCK = ['home', 'cal', 'tasks', 'airbnb', 'kitchen', 'music', 'security', 'board', 'packages', 'energy', 'photos', 'emergency', 'settings'];
+
+  /* WLED_FNS */
+  const WLED_COLORS = [
+    ['Warm', '#ffb15c'], ['White', '#ffffff'], ['Red', '#ff334f'],
+    ['Orange', '#ff822f'], ['Green', '#30d478'], ['Blue', '#338bff'],
+    ['Purple', '#aa64ff'], ['Pink', '#ff62ba'],
+  ];
+  function wledRGB(hex) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(String(hex))) return null;
+    return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  }
+  function wledColorCapable(attributes) {
+    const modes = Array.isArray(attributes?.supported_color_modes) ? attributes.supported_color_modes : [];
+    return modes.some((mode) => ['hs', 'rgb', 'rgbw', 'rgbww', 'xy'].includes(mode));
+  }
+  function wledLooksLikeLight(entity) {
+    return !!entity && /^light\./.test(entity.entity_id) &&
+      /wled|led.strip|led.tape|pixel/i.test(entity.entity_id + ' ' + (entity.attributes?.friendly_name || ''));
+  }
+  function wledPresetMatch(lightId, states, configured) {
+    if (configured && states[configured] && configured.startsWith('select.') &&
+        Array.isArray(states[configured].attributes?.options)) return configured;
+    const candidates = Object.keys(states).filter((id) =>
+      id.startsWith('select.') && /preset/i.test(id + ' ' + (states[id].attributes?.friendly_name || '')) &&
+      Array.isArray(states[id].attributes?.options));
+    const slug = lightId.replace(/^light\./, '').replace(/_segment_?\d+$/, '');
+    return candidates.find((id) => id.includes(slug)) ||
+      (candidates.length === 1 ? candidates[0] : '');
+  }
+  /* /WLED_FNS */
+
+  const APP_TITLES = { home: 'Home', cal: 'Calendar', tasks: 'Tasks', airbnb: 'Airbnb', kitchen: 'Kitchen', music: 'Music', security: 'Security', board: 'Message Board', packages: 'Packages', energy: 'Energy', photos: 'Photos', emergency: 'Emergency', settings: 'Settings', assist: 'Assistant', wled: 'LED Strips' };
+  const APP_ICONS = { home: 'home', cal: 'cal', tasks: 'check', airbnb: 'key', kitchen: 'pot', music: 'music', security: 'shield', board: 'msg', packages: 'box', energy: 'bolt', photos: 'photo', emergency: 'sos', settings: 'gear', assist: 'sparkle', wled: 'bulb' };
+  const DOCK = ['home', 'wled', 'cal', 'tasks', 'airbnb', 'kitchen', 'music', 'security', 'board', 'packages', 'energy', 'photos', 'emergency', 'settings'];
   const PRIVATE_APPS = ['cal', 'tasks', 'airbnb', 'board', 'packages'];
   const LIST_KINDS = [{ id: 'groceries', name: 'Groceries', icon: 'cart' }, { id: 'chores', name: 'Chores', icon: 'check' }, { id: 'reminders', name: 'Reminders', icon: 'bell' }];
   const HAZARDS = { smoke: 'Smoke', carbon_monoxide: 'Carbon monoxide', gas: 'Gas', heat: 'Heat', moisture: 'Water leak' };
@@ -315,6 +346,7 @@
     haUrl: '',
     haToken: '',
     favorites: [],
+    wled: { lights: [], presets: {} },
     calendars: [],
     calendarOwners: {},
     mainCamera: '',
@@ -370,6 +402,11 @@
     ['main', 'guest'].forEach((k) => { s.layout[k] = layoutList(s.layout[k], k, false); });
     s.layout.main = withTeslaWidget(s.layout.main);
     s.tesla = { cars: cleanTeslaCars(s.tesla && s.tesla.cars) };
+    const wled = s.wled && typeof s.wled === 'object' ? s.wled : {};
+    s.wled = {
+      lights: Array.isArray(wled.lights) ? [...new Set(wled.lights.filter((id) => typeof id === 'string' && id.startsWith('light.')))].slice(0, 32) : [],
+      presets: wled.presets && typeof wled.presets === 'object' && !Array.isArray(wled.presets) ? wled.presets : {},
+    };
     const countdown = cleanCountdownSettings(s.countdownDate, s.countdownLabel);
     s.countdownDate = countdown.date;
     s.countdownLabel = countdown.label;
@@ -459,6 +496,8 @@
       mk('light.living_room', 'off', { friendly_name: 'Living Room', supported_color_modes: ['brightness'] }),
       mk('light.porch', 'on', { friendly_name: 'Porch', supported_color_modes: ['onoff'] }),
       mk('light.hallway', 'off', { friendly_name: 'Hallway', supported_color_modes: ['onoff'] }),
+      mk('light.wled_demo', 'on', { friendly_name: 'WLED Sample Strip', brightness: 180, rgb_color: [51, 139, 255], effect: 'Solid', effect_list: ['Solid', 'Rainbow', 'Twinkle', 'Chase'], supported_color_modes: ['rgb'] }),
+      mk('select.wled_demo_preset', 'Default', { friendly_name: 'WLED Sample Preset', options: ['Default', 'Sunset', 'Rainbow Party', 'Night'] }),
       mk('switch.coffee_maker', 'off', { friendly_name: 'Coffee Maker' }),
       mk('lock.front_door', 'locked', { friendly_name: 'Front Door' }),
       mk('cover.garage_door', 'closed', { friendly_name: 'Garage Door', device_class: 'garage' }),
@@ -761,7 +800,12 @@
     const prev = { ...s, attributes: { ...s.attributes } };
     const a = s.attributes;
     if (service === 'toggle') { s.state = s.state === 'on' ? 'off' : 'on'; if (domain === 'light' && s.state === 'on' && !a.brightness && a.supported_color_modes?.[0] !== 'onoff') a.brightness = 255; }
-    else if (service === 'turn_on' && ['light', 'switch', 'fan', 'input_boolean'].includes(domain)) { s.state = 'on'; if (data.brightness_pct) a.brightness = Math.round(data.brightness_pct * 2.55); }
+    else if (service === 'turn_on' && ['light', 'switch', 'fan', 'input_boolean'].includes(domain)) {
+      s.state = 'on';
+      if (data.brightness_pct != null) a.brightness = Math.round(data.brightness_pct * 2.55);
+      if (Array.isArray(data.rgb_color)) { a.rgb_color = data.rgb_color; a.effect = 'Solid'; }
+      if (data.effect) a.effect = data.effect;
+    } else if (domain === 'select' && service === 'select_option') s.state = data.option;
     else if (service === 'turn_off') s.state = 'off';
     else if (domain === 'lock') s.state = service === 'unlock' ? 'unlocked' : 'locked';
     else if (domain === 'cover') s.state = service === 'open_cover' ? 'open' : 'closed';
@@ -2312,7 +2356,7 @@
   // =================================================================== apps
   const APP = {
     name: null, room: 'fav', ttab: 'groceries', ktab: 'plan', recipeId: null, step: 0, adding: false, checked: new Set(), confirm: null, mealEdit: null, mealPath: {},
-    calView: 'week', calOffset: 0, calHide: new Set(), stab: 'connect', layoutKey: 'main', modeEdit: 'morning', emEdit: false,
+    wledSetup: false, calView: 'week', calOffset: 0, calHide: new Set(), stab: 'connect', layoutKey: 'main', modeEdit: 'morning', emEdit: false,
   };
 
   let sheetReturnFocus = null;
