@@ -303,9 +303,40 @@
   }
   /* /HOME_LAYOUT_FNS */
 
-  const APP_TITLES = { home: 'Home', cal: 'Calendar', tasks: 'Tasks', airbnb: 'Airbnb', kitchen: 'Kitchen', music: 'Music', security: 'Security', board: 'Message Board', packages: 'Packages', energy: 'Energy', photos: 'Photos', emergency: 'Emergency', settings: 'Settings', assist: 'Assistant' };
-  const APP_ICONS = { home: 'home', cal: 'cal', tasks: 'check', airbnb: 'key', kitchen: 'pot', music: 'music', security: 'shield', board: 'msg', packages: 'box', energy: 'bolt', photos: 'photo', emergency: 'sos', settings: 'gear', assist: 'sparkle' };
-  const DOCK = ['home', 'cal', 'tasks', 'airbnb', 'kitchen', 'music', 'security', 'board', 'packages', 'energy', 'photos', 'emergency', 'settings'];
+
+  /* WLED_FNS */
+  const WLED_COLORS = [
+    ['Warm', '#ffb15c'], ['White', '#ffffff'], ['Red', '#ff334f'],
+    ['Orange', '#ff822f'], ['Green', '#30d478'], ['Blue', '#338bff'],
+    ['Purple', '#aa64ff'], ['Pink', '#ff62ba'],
+  ];
+  function wledRGB(hex) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(String(hex))) return null;
+    return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  }
+  function wledColorCapable(attributes) {
+    const modes = Array.isArray(attributes?.supported_color_modes) ? attributes.supported_color_modes : [];
+    return modes.some((mode) => ['hs', 'rgb', 'rgbw', 'rgbww', 'xy'].includes(mode));
+  }
+  function wledLooksLikeLight(entity) {
+    return !!entity && /^light\./.test(entity.entity_id) &&
+      /wled|led.strip|led.tape|pixel/i.test(entity.entity_id + ' ' + (entity.attributes?.friendly_name || ''));
+  }
+  function wledPresetMatch(lightId, states, configured) {
+    if (configured && states[configured] && configured.startsWith('select.') &&
+        Array.isArray(states[configured].attributes?.options)) return configured;
+    const candidates = Object.keys(states).filter((id) =>
+      id.startsWith('select.') && /preset/i.test(id + ' ' + (states[id].attributes?.friendly_name || '')) &&
+      Array.isArray(states[id].attributes?.options));
+    const slug = lightId.replace(/^light\./, '').replace(/_segment_?\d+$/, '');
+    return candidates.find((id) => id.includes(slug)) ||
+      '';
+  }
+  /* /WLED_FNS */
+
+  const APP_TITLES = { home: 'Home', cal: 'Calendar', tasks: 'Tasks', airbnb: 'Airbnb', kitchen: 'Kitchen', music: 'Music', security: 'Security', board: 'Message Board', packages: 'Packages', energy: 'Energy', photos: 'Photos', emergency: 'Emergency', settings: 'Settings', assist: 'Assistant', wled: 'LED Strips' };
+  const APP_ICONS = { home: 'home', cal: 'cal', tasks: 'check', airbnb: 'key', kitchen: 'pot', music: 'music', security: 'shield', board: 'msg', packages: 'box', energy: 'bolt', photos: 'photo', emergency: 'sos', settings: 'gear', assist: 'sparkle', wled: 'bulb' };
+  const DOCK = ['home', 'wled', 'cal', 'tasks', 'airbnb', 'kitchen', 'music', 'security', 'board', 'packages', 'energy', 'photos', 'emergency', 'settings'];
   const PRIVATE_APPS = ['cal', 'tasks', 'airbnb', 'board', 'packages'];
   const LIST_KINDS = [{ id: 'groceries', name: 'Groceries', icon: 'cart' }, { id: 'chores', name: 'Chores', icon: 'check' }, { id: 'reminders', name: 'Reminders', icon: 'bell' }];
   const HAZARDS = { smoke: 'Smoke', carbon_monoxide: 'Carbon monoxide', gas: 'Gas', heat: 'Heat', moisture: 'Water leak' };
@@ -315,6 +346,7 @@
     haUrl: '',
     haToken: '',
     favorites: [],
+    wled: { lights: [], presets: {} },
     calendars: [],
     calendarOwners: {},
     mainCamera: '',
@@ -370,6 +402,11 @@
     ['main', 'guest'].forEach((k) => { s.layout[k] = layoutList(s.layout[k], k, false); });
     s.layout.main = withTeslaWidget(s.layout.main);
     s.tesla = { cars: cleanTeslaCars(s.tesla && s.tesla.cars) };
+    const wled = s.wled && typeof s.wled === 'object' ? s.wled : {};
+    s.wled = {
+      lights: Array.isArray(wled.lights) ? [...new Set(wled.lights.filter((id) => typeof id === 'string' && id.startsWith('light.')))].slice(0, 32) : [],
+      presets: wled.presets && typeof wled.presets === 'object' && !Array.isArray(wled.presets) ? wled.presets : {},
+    };
     const countdown = cleanCountdownSettings(s.countdownDate, s.countdownLabel);
     s.countdownDate = countdown.date;
     s.countdownLabel = countdown.label;
@@ -459,6 +496,8 @@
       mk('light.living_room', 'off', { friendly_name: 'Living Room', supported_color_modes: ['brightness'] }),
       mk('light.porch', 'on', { friendly_name: 'Porch', supported_color_modes: ['onoff'] }),
       mk('light.hallway', 'off', { friendly_name: 'Hallway', supported_color_modes: ['onoff'] }),
+      mk('light.wled_demo', 'on', { friendly_name: 'WLED Sample Strip', brightness: 180, rgb_color: [51, 139, 255], effect: 'Solid', effect_list: ['Solid', 'Rainbow', 'Twinkle', 'Chase'], supported_color_modes: ['rgb'] }),
+      mk('select.wled_demo_preset', 'Default', { friendly_name: 'WLED Sample Preset', options: ['Default', 'Sunset', 'Rainbow Party', 'Night'] }),
       mk('switch.coffee_maker', 'off', { friendly_name: 'Coffee Maker' }),
       mk('lock.front_door', 'locked', { friendly_name: 'Front Door' }),
       mk('cover.garage_door', 'closed', { friendly_name: 'Garage Door', device_class: 'garage' }),
@@ -761,7 +800,12 @@
     const prev = { ...s, attributes: { ...s.attributes } };
     const a = s.attributes;
     if (service === 'toggle') { s.state = s.state === 'on' ? 'off' : 'on'; if (domain === 'light' && s.state === 'on' && !a.brightness && a.supported_color_modes?.[0] !== 'onoff') a.brightness = 255; }
-    else if (service === 'turn_on' && ['light', 'switch', 'fan', 'input_boolean'].includes(domain)) { s.state = 'on'; if (data.brightness_pct) a.brightness = Math.round(data.brightness_pct * 2.55); }
+    else if (service === 'turn_on' && ['light', 'switch', 'fan', 'input_boolean'].includes(domain)) {
+      s.state = 'on';
+      if (data.brightness_pct != null) a.brightness = Math.round(data.brightness_pct * 2.55);
+      if (Array.isArray(data.rgb_color)) { a.rgb_color = data.rgb_color; a.effect = 'Solid'; }
+      if (data.effect) a.effect = data.effect;
+    } else if (domain === 'select' && service === 'select_option') s.state = data.option;
     else if (service === 'turn_off') s.state = 'off';
     else if (domain === 'lock') s.state = service === 'unlock' ? 'unlocked' : 'locked';
     else if (domain === 'cover') s.state = service === 'open_cover' ? 'open' : 'closed';
@@ -2312,7 +2356,7 @@
   // =================================================================== apps
   const APP = {
     name: null, room: 'fav', ttab: 'groceries', ktab: 'plan', recipeId: null, step: 0, adding: false, checked: new Set(), confirm: null, mealEdit: null, mealPath: {},
-    calView: 'week', calOffset: 0, calHide: new Set(), stab: 'connect', layoutKey: 'main', modeEdit: 'morning', emEdit: false,
+    wledSetup: false, calView: 'week', calOffset: 0, calHide: new Set(), stab: 'connect', layoutKey: 'main', modeEdit: 'morning', emEdit: false,
   };
 
   let sheetReturnFocus = null;
@@ -2459,6 +2503,67 @@
       ${scenes.length && APP.room === 'fav' ? `<div class="section-title">Scenes</div><div class="quick">${scenes.slice(0, 12).map((id) => `<button type="button" class="qbtn" data-act="tile" data-entity="${esc(id)}">${icon('sparkle')} ${esc(entityName(id))}</button>`).join('')}</div><div class="section-title">Devices</div>` : ''}
       ${shown.length ? `<div class="tiles">${shown.map((id) => tileHTML(id, true)).join('')}</div>` : '<div class="empty">Nothing in this room yet.</div>'}
       ${capped ? '<p class="help" style="margin-top:12px">Showing the first 60. Hide extra entities in Home Assistant to tidy this list.</p>' : ''}`;
+  }
+
+
+  // ---- WLED: uses authenticated Home Assistant services; no direct HTTP
+  // calls to local strips from an HTTPS home-screen PWA.
+  function wledLightIds() {
+    if (!H.live) return ['light.wled_demo'];
+    const chosen = S.wled.lights.filter((id) => H.states[id] && id.startsWith('light.'));
+    if (chosen.length) return chosen;
+    return Object.values(H.states).filter(wledLooksLikeLight).map((s) => s.entity_id).slice(0, 12);
+  }
+  function wledControlCard(id) {
+    const device = H.states[id];
+    if (!device) return '';
+    const a = device.attributes || {};
+    const name = esc(a.friendly_name || id);
+    const offline = ['unknown', 'unavailable'].includes(device.state);
+    const on = device.state === 'on';
+    const locked = offline ? 'disabled' : '';
+    const pct = Math.round(clamp((Number(a.brightness) || 255) / 2.55, 1, 100));
+    const colorReady = wledColorCapable(a);
+    const effects = Array.isArray(a.effect_list) ? a.effect_list.filter((e) => typeof e === 'string') : [];
+    const preset = wledPresetMatch(id, H.states, S.wled.presets[id]);
+    const presetState = H.states[preset];
+    const options = Array.isArray(presetState?.attributes?.options) ? presetState.attributes.options : [];
+    return `<section class="wled-card" aria-label="${name}">
+      <div class="wled-card-head">
+        <span class="wled-indicator${on ? ' is-on' : ''}"></span>
+        <div class="wled-card-name"><strong>${name}</strong><span>${offline ? 'Unavailable in Home Assistant' : on ? 'On · ' + pct + '% brightness' : 'Off'}${!H.live ? ' · Sample' : ''}</span></div>
+        <button type="button" class="wled-power${on ? ' is-on' : ''}" data-act="wled-power" data-entity="${esc(id)}" aria-label="${on ? 'Turn off' : 'Turn on'} ${name}" aria-pressed="${on}" ${locked}>${on ? 'Turn off' : 'Turn on'}</button>
+      </div>
+      <div class="wled-card-body">
+        <label class="wled-field"><span>Brightness <b>${pct}%</b></span><input type="range" min="1" max="100" value="${pct}" data-wled-bright="${esc(id)}" aria-label="${name} brightness" ${locked}></label>
+        ${colorReady ? `<fieldset class="wled-field"><legend>Color</legend><div class="wled-colors">${WLED_COLORS.map(([label, hex]) => `<button type="button" class="wled-swatch" title="${esc(label)}" style="--swatch:${hex}" data-act="wled-color" data-entity="${esc(id)}" data-color="${hex}" aria-label="${esc(label)} for ${name}" ${locked}></button>`).join('')}</div></fieldset>` : '<p class="help">This device does not expose RGB color control.</p>'}
+        ${effects.length ? `<label class="wled-field"><span>Effect</span><select class="wled-select" data-wled-effect="${esc(id)}" aria-label="${name} effect" ${locked}><option value="">Choose an effect</option>${effects.map((effect) => `<option value="${esc(effect)}" ${a.effect === effect ? 'selected' : ''}>${esc(effect)}</option>`).join('')}</select></label>` : ''}
+        ${options.length ? `<label class="wled-field"><span>Saved WLED preset</span><select class="wled-select" data-wled-preset="${esc(id)}" aria-label="${name} preset" ${locked}><option value="">Choose a preset</option>${options.filter((p) => typeof p === 'string').map((p) => `<option value="${esc(p)}" ${presetState.state === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>` : '<p class="help">Optional: map a WLED preset entity in Configure strips to access saved presets.</p>'}
+      </div>
+    </section>`;
+  }
+  function wledSettings() {
+    const lights = Object.keys(H.states).filter((id) => id.startsWith('light.') && !H.hidden.has(id));
+    const presets = Object.keys(H.states).filter((id) => id.startsWith('select.') &&
+      /preset/i.test(id + ' ' + (H.states[id]?.attributes?.friendly_name || '')) &&
+      Array.isArray(H.states[id]?.attributes?.options));
+    return `<section class="wled-setup" aria-label="Configure LED strips"><h2>Choose your WLED strips</h2>
+      <p class="help">In Home Assistant, open Settings → Devices & services → Add integration → WLED. Then choose the light entities for each strip or segment below. Changes save on this iPad.</p>
+      ${H.live ? (lights.length ? `<div class="wled-choose">${lights.map((id) => `<label class="check"><input type="checkbox" data-wled-light="${esc(id)}" ${S.wled.lights.includes(id) ? 'checked' : ''}><span>${esc(entityName(id))}</span></label>`).join('')}</div>` : '<p class="help">No light entities reported by Home Assistant.</p>') : '<p class="help">Connect Home Assistant in Settings → Connections to choose your real strips. The example strip is only a preview.</p>'}
+      ${H.live ? S.wled.lights.filter((id) => H.states[id]).map((id) => `<label class="wled-field"><span>Preset entity for ${esc(entityName(id))}</span><select class="wled-select" data-wled-map="${esc(id)}"><option value="">Auto-detect</option>${presets.map((p) => `<option value="${esc(p)}" ${S.wled.presets[id] === p ? 'selected' : ''}>${esc(entityName(p))}</option>`).join('')}</select></label>`).join('') : ''}
+    </section>`;
+  }
+  function appWled() {
+    const ids = wledLightIds();
+    return `<div class="wled-intro">
+      <div><strong>LED Strips</strong><p>Power, dimming, color, effects and saved presets through Home Assistant.</p></div>
+      ${privateOK() ? `<button type="button" class="qbtn" data-act="wled-setup" aria-expanded="${APP.wledSetup}">${APP.wledSetup ? 'Done configuring' : 'Configure strips'}</button>` : ''}
+    </div>
+    ${!H.live ? '<p class="wled-note">Sample preview only. Connect Home Assistant to control real WLED lights.</p>' : ''}
+    ${ids.length ? `<div class="wled-grid">${ids.map(wledControlCard).join('')}</div>` :
+      '<div class="empty">No WLED lights found. Tap Configure strips to select the light entities exposed by the Home Assistant WLED integration.</div>'}
+    ${APP.wledSetup && privateOK() ? wledSettings() : ''}
+    <p class="help">WLED 0.14+ is required for the Home Assistant integration. Strips with multiple segments can expose each segment as a separate light. Effects and presets are shown only when provided by your devices.</p>`;
   }
 
   // ---- Calendar
@@ -3082,7 +3187,7 @@
       <p class="help faint">Bauder Home. Settings, lists, recipes, notes and photos are stored only on this device unless you chose Home Assistant lists.</p>`;
   }
 
-  const APPS = { home: appHome, cal: appCal, tasks: appTasks, airbnb: appAirbnb, kitchen: appKitchen, music: appMusic, security: appSecurity, board: appBoard, packages: appPackages, energy: appEnergy, photos: appPhotos, emergency: appEmergency, settings: appSettings, assist: appAssist };
+  const APPS = { home: appHome, wled: appWled, cal: appCal, tasks: appTasks, airbnb: appAirbnb, kitchen: appKitchen, music: appMusic, security: appSecurity, board: appBoard, packages: appPackages, energy: appEnergy, photos: appPhotos, emergency: appEmergency, settings: appSettings, assist: appAssist };
 
   // ============================================================ idle faces
   const FACES = ['bold', 'analog', 'photos', 'glance'];
@@ -3357,7 +3462,23 @@
     },
     close: () => closeApp(),
     idle: () => enterIdle(),
+
     tile: (el) => tapEntity(el.dataset.entity),
+    'wled-setup': () => { if (!privateOK()) return; APP.wledSetup = !APP.wledSetup; renderApp(); },
+    'wled-power': async (el) => {
+      const id = el.dataset.entity, st = H.states[id];
+      if (!id?.startsWith('light.') || !st || ['unavailable', 'unknown'].includes(st.state)) return;
+      await call('light', st.state === 'on' ? 'turn_off' : 'turn_on', id);
+      if (APP.name === 'wled') renderApp();
+    },
+    'wled-color': async (el) => {
+      const id = el.dataset.entity, st = H.states[id];
+      const rgb = wledRGB(el.dataset.color);
+      if (!st || !id.startsWith('light.') || !wledColorCapable(st.attributes) || !rgb ||
+          ['unavailable', 'unknown'].includes(st.state)) return;
+      await call('light', 'turn_on', id, { rgb_color: rgb });
+      if (APP.name === 'wled') renderApp();
+    },
     temp: (el) => {
       const id = el.dataset.entity, s = H.states[id];
       if (!s) return;
@@ -3630,6 +3751,52 @@
   document.addEventListener('change', (e) => {
     const t = e.target;
     const d = t.dataset;
+
+    if (d.wledLight) {
+      if (!privateOK()) return;
+      const id = d.wledLight;
+      if (!id.startsWith('light.') || !H.states[id]) return;
+      S.wled.lights = t.checked ? [...new Set([...S.wled.lights, id])].slice(0, 32) : S.wled.lights.filter((x) => x !== id);
+      saveSettings(); if (APP.name === 'wled') renderApp(); return;
+    }
+    if (d.wledMap) {
+      if (!privateOK()) return;
+      const id = d.wledMap;
+      if (!S.wled.lights.includes(id)) return;
+      const mapped = t.value;
+      if (mapped && (!mapped.startsWith('select.') ||
+          !Array.isArray(H.states[mapped]?.attributes?.options) || !/preset/i.test(mapped + ' ' + (H.states[mapped]?.attributes?.friendly_name || '')))) return;
+      if (mapped) S.wled.presets[id] = mapped;
+      else delete S.wled.presets[id];
+      saveSettings(); if (APP.name === 'wled') renderApp(); return;
+    }
+    if (d.wledBright) {
+      const id = d.wledBright, st = H.states[id], value = Number(t.value);
+      if (!id.startsWith('light.') || !st || ['unavailable', 'unknown'].includes(st.state) || !Number.isFinite(value)) return;
+      call('light', 'turn_on', id, { brightness_pct: Math.round(clamp(value, 1, 100)) }).then(() => { if (APP.name === 'wled') renderApp(); });
+      return;
+    }
+    if (d.wledEffect) {
+      const id = d.wledEffect, st = H.states[id], effect = t.value;
+      if (!id.startsWith('light.') || !st || !Array.isArray(st.attributes?.effect_list) ||
+          !st.attributes.effect_list.includes(effect) || ['unavailable', 'unknown'].includes(st.state)) return;
+      call('light', 'turn_on', id, { effect }).then(() => { if (APP.name === 'wled') renderApp(); });
+      return;
+    }
+    if (d.wledPreset) {
+      const id = d.wledPreset, st = H.states[id], preset = wledPresetMatch(id, H.states, S.wled.presets[id]);
+      const option = t.value, select = H.states[preset];
+      if (!id.startsWith('light.') || !st || ['unavailable', 'unknown'].includes(st.state) ||
+          !select || ['unavailable', 'unknown'].includes(select.state) ||
+          !Array.isArray(select.attributes?.options) || !select.attributes.options.includes(option)) return;
+      (async () => {
+        // Turn the strip on before choosing a preset, not after.
+        if (st.state !== 'on' && !await call('light', 'turn_on', id)) return;
+        await call('select', 'select_option', preset, { option });
+        if (APP.name === 'wled') renderApp();
+      })();
+      return;
+    }
     if (d.bright) { dragging = false; call('light', 'turn_on', d.bright, { brightness_pct: +t.value }); return; }
     if (d.vol) { dragging = false; call('media_player', 'volume_set', d.vol, { volume_level: +t.value / 100 }); return; }
     if (d.source) { call('media_player', 'select_source', d.source, { source: t.value }); return; }
