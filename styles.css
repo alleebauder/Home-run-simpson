@@ -515,7 +515,7 @@ div.tile-main { cursor: default; }
   background: var(--sheet);
   -webkit-backdrop-filter: blur(40px) saturate(160%);
   backdrop-filter: blur(40px) saturate(160%);
-  animation: rise .28s cubic-bezier(.2, .8, .2, 1);
+  animation: none;
 }
 @keyframes rise { from { transform: translateY(24px); opacity: 0; } }
 .sheet-head {
@@ -1026,7 +1026,7 @@ button.w:active { transform: scale(.99); }
   box-shadow: 0 -16px 64px rgba(0,0,0,.13);
   transform-origin: center bottom;
   will-change: auto;
-  animation: sheet-enter .35s cubic-bezier(.2,.85,.25,1) both;
+  animation: none;
 }
 @keyframes sheet-enter {
   from { opacity: 0; transform: translateY(22px) scale(.993); }
