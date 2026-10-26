@@ -1,0 +1,13 @@
+{
+  "name": "bauder-home",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Bauder Home iPad PWA browser regression tests",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:e2e": "playwright test -c e2e/playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0"
+  }
+}
