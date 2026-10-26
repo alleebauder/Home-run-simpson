@@ -1,4 +1,8 @@
 import { defineConfig } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export default defineConfig({
   testDir: '.',
@@ -30,6 +34,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'python3 -m http.server 8765 --bind 127.0.0.1',
+    cwd: repoRoot,
     url: 'http://127.0.0.1:8765/',
     reuseExistingServer: !process.env.CI,
     timeout: 20_000,
