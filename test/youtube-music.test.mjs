@@ -90,6 +90,7 @@ test('supported YouTube links are embedded inside Bauder Home, not opened in a n
 });
 
 test('dock tab label carries its own open action', () => {
-  assert.match(app, /class="app-tab-label" data-act="open" data-app="\$\{a\}"/);
+  assert.match(app, /class="app-tab-label">\$\{esc\(DOCK_LABELS\[a\] \|\| APP_TITLES\[a\]\)\}<\/span>/);
+  assert.match(app, /class="appbtn" data-act="open" data-app="\$\{a\}"/);
   assert.match(app, /APP\.name === 'music' && YTM\.embedUrl/); // skips closing the player on refresh
 });
