@@ -2557,12 +2557,12 @@
     const ids = wledLightIds();
     return `<div class="wled-intro">
       <div><strong>LED Strips</strong><p>Power, dimming, color, effects and saved presets through Home Assistant.</p></div>
-      <button type="button" class="qbtn" data-act="wled-setup" aria-expanded="${APP.wledSetup}">${APP.wledSetup ? 'Done configuring' : 'Configure strips'}</button>
+      ${privateOK() ? `<button type="button" class="qbtn" data-act="wled-setup" aria-expanded="${APP.wledSetup}">${APP.wledSetup ? 'Done configuring' : 'Configure strips'}</button>` : ''}
     </div>
     ${!H.live ? '<p class="wled-note">Sample preview only. Connect Home Assistant to control real WLED lights.</p>' : ''}
     ${ids.length ? `<div class="wled-grid">${ids.map(wledControlCard).join('')}</div>` :
       '<div class="empty">No WLED lights found. Tap Configure strips to select the light entities exposed by the Home Assistant WLED integration.</div>'}
-    ${APP.wledSetup ? wledSettings() : ''}
+    ${APP.wledSetup && privateOK() ? wledSettings() : ''}
     <p class="help">WLED 0.14+ is required for the Home Assistant integration. Strips with multiple segments can expose each segment as a separate light. Effects and presets are shown only when provided by your devices.</p>`;
   }
 
@@ -3462,7 +3462,23 @@
     },
     close: () => closeApp(),
     idle: () => enterIdle(),
+
     tile: (el) => tapEntity(el.dataset.entity),
+    'wled-setup': () => { if (!privateOK()) return; APP.wledSetup = !APP.wledSetup; renderApp(); },
+    'wled-power': async (el) => {
+      const id = el.dataset.entity, st = H.states[id];
+      if (!id?.startsWith('light.') || !st || ['unavailable', 'unknown'].includes(st.state)) return;
+      await call('light', st.state === 'on' ? 'turn_off' : 'turn_on', id);
+      if (APP.name === 'wled') renderApp();
+    },
+    'wled-color': async (el) => {
+      const id = el.dataset.entity, st = H.states[id];
+      const rgb = wledRGB(el.dataset.color);
+      if (!st || !id.startsWith('light.') || !wledColorCapable(st.attributes) || !rgb ||
+          ['unavailable', 'unknown'].includes(st.state)) return;
+      await call('light', 'turn_on', id, { rgb_color: rgb });
+      if (APP.name === 'wled') renderApp();
+    },
     temp: (el) => {
       const id = el.dataset.entity, s = H.states[id];
       if (!s) return;
@@ -3735,6 +3751,52 @@
   document.addEventListener('change', (e) => {
     const t = e.target;
     const d = t.dataset;
+
+    if (d.wledLight) {
+      if (!privateOK()) return;
+      const id = d.wledLight;
+      if (!id.startsWith('light.') || !H.states[id]) return;
+      S.wled.lights = t.checked ? [...new Set([...S.wled.lights, id])].slice(0, 32) : S.wled.lights.filter((x) => x !== id);
+      saveSettings(); if (APP.name === 'wled') renderApp(); return;
+    }
+    if (d.wledMap) {
+      if (!privateOK()) return;
+      const id = d.wledMap;
+      if (!S.wled.lights.includes(id)) return;
+      const mapped = t.value;
+      if (mapped && (!mapped.startsWith('select.') ||
+          !Array.isArray(H.states[mapped]?.attributes?.options) || !/preset/i.test(mapped + ' ' + (H.states[mapped]?.attributes?.friendly_name || '')))) return;
+      if (mapped) S.wled.presets[id] = mapped;
+      else delete S.wled.presets[id];
+      saveSettings(); if (APP.name === 'wled') renderApp(); return;
+    }
+    if (d.wledBright) {
+      const id = d.wledBright, st = H.states[id], value = Number(t.value);
+      if (!id.startsWith('light.') || !st || ['unavailable', 'unknown'].includes(st.state) || !Number.isFinite(value)) return;
+      call('light', 'turn_on', id, { brightness_pct: Math.round(clamp(value, 1, 100)) }).then(() => { if (APP.name === 'wled') renderApp(); });
+      return;
+    }
+    if (d.wledEffect) {
+      const id = d.wledEffect, st = H.states[id], effect = t.value;
+      if (!id.startsWith('light.') || !st || !Array.isArray(st.attributes?.effect_list) ||
+          !st.attributes.effect_list.includes(effect) || ['unavailable', 'unknown'].includes(st.state)) return;
+      call('light', 'turn_on', id, { effect }).then(() => { if (APP.name === 'wled') renderApp(); });
+      return;
+    }
+    if (d.wledPreset) {
+      const id = d.wledPreset, st = H.states[id], preset = wledPresetMatch(id, H.states, S.wled.presets[id]);
+      const option = t.value, select = H.states[preset];
+      if (!id.startsWith('light.') || !st || ['unavailable', 'unknown'].includes(st.state) ||
+          !select || ['unavailable', 'unknown'].includes(select.state) ||
+          !Array.isArray(select.attributes?.options) || !select.attributes.options.includes(option)) return;
+      (async () => {
+        // Turn the strip on before choosing a preset, not after.
+        if (st.state !== 'on' && !await call('light', 'turn_on', id)) return;
+        await call('select', 'select_option', preset, { option });
+        if (APP.name === 'wled') renderApp();
+      })();
+      return;
+    }
     if (d.bright) { dragging = false; call('light', 'turn_on', d.bright, { brightness_pct: +t.value }); return; }
     if (d.vol) { dragging = false; call('media_player', 'volume_set', d.vol, { volume_level: +t.value / 100 }); return; }
     if (d.source) { call('media_player', 'select_source', d.source, { source: t.value }); return; }
