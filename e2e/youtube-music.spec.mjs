@@ -12,11 +12,13 @@ test('YouTube Music panel opens in sample mode, saves playlists, and reopens saf
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('/');
   for (let n = 0; n < 2; n++) {
-    await page.locator('#dock [data-app="music"]').click();
+    await page.locator('#dock [data-app="music"] .app-tab-label').click();
     await expect(page.locator('#sheet h1')).toHaveText('Music');
     await expect(page.locator('.ytm-panel')).toBeVisible();
-    await expect(page.locator('.ytm-panel')).toContainText('Not connected');
-    await expect(page.locator('[data-act="ytm-play"]')).toBeDisabled();
+    await expect(page.locator('[data-act="ytm-destination"][data-destination="ipad"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-act="ytm-play"]')).toBeEnabled();
+    await expect(page.locator('.ytm-panel')).toContainText('Playback stays on this screen.');
+    await expect(page.locator('.ytm-panel a[href*="music.youtube.com"]')).toHaveCount(0);
     await expect(page.locator('.speakers')).toBeVisible();
     if (n === 0) {
       await page.locator('#ytm-label').fill('Evening Worship');
@@ -25,7 +27,7 @@ test('YouTube Music panel opens in sample mode, saves playlists, and reopens saf
       await expect(page.locator('.ytm-saved-row')).toHaveCount(1);
     } else {
       await expect(page.locator('.ytm-saved-row')).toHaveCount(1);
-      await expect(page.locator('.ytm-saved-label')).toHaveText('Evening Worship');
+      await expect(page.locator('.ytm-saved-label-btn')).toHaveText('Evening Worship');
     }
     await page.locator('#sheet .done-btn').click();
     await expect(page.locator('#sheet')).toBeHidden();
@@ -73,6 +75,7 @@ test('Music Assistant service calls use selected speaker without direct YouTube 
   });
   await page.goto('/');
   await page.locator('#dock [data-app="music"]').click();
+  await page.locator('[data-act="ytm-destination"][data-destination="speakers"]').click();
   await expect(page.locator('#ytm-player option')).toHaveCount(3);
   await page.locator('#ytm-player').selectOption('media_player.ma_living_room');
   await expect(page.locator('[data-act="ytm-play"]')).toBeEnabled();
@@ -87,7 +90,7 @@ test('Music Assistant service calls use selected speaker without direct YouTube 
   await page.locator('#ytm-label').fill('Family Playlist');
   await page.locator('#ytm-url').fill(playlist);
   await page.locator('[data-act="ytm-add"]').click();
-  await page.locator('[data-act="ytm-play-saved"]').click();
+  await page.locator('.ytm-saved-label-btn[data-act="ytm-play-saved"]').click();
   await expect.poll(async () => page.evaluate(() =>
     window.__haCommands.filter(c => c.type === 'call_service' && c.domain === 'music_assistant').length)).toBe(2);
 
@@ -114,4 +117,41 @@ test('rejects an off-domain YouTube playlist and preserves the app', async ({ pa
   await expect(page.locator('#sheet')).toBeVisible();
   await page.locator('#sheet .done-btn').click();
   await expect(page.locator('#sheet')).toBeHidden();
+});
+
+test('Music playlists play in an inline iPad frame and never open an external tab', async ({ page }) => {
+  const popups = [];
+  const errors = [];
+  page.on('popup', popup => popups.push(popup.url()));
+  page.on('pageerror', err => errors.push(err.message));
+  await page.goto('/');
+  await page.locator('#dock [data-app="music"] .app-tab-label').click();
+  await page.locator('#ytm-query').fill('https://music.youtube.com/watch?v=abcdefghijk');
+  await page.locator('[data-act="ytm-play"]').click();
+  await expect(page.locator('#ytm-video')).toHaveAttribute('src',
+    'https://www.youtube.com/embed/abcdefghijk?playsinline=1&controls=1');
+  await expect(page.locator('.ytm-inline-player')).toBeVisible();
+  await page.evaluate(() => { window.__playingFrame = document.querySelector('#ytm-video'); });
+  // Adding a playlist must not replace the active iframe or stop the music.
+  await page.locator('#ytm-label').fill('Family listening');
+  await page.locator('#ytm-url').fill('https://music.youtube.com/playlist?list=PLMtYkFCCurnwZJ2k7NOz1VCcBN8aGj8U');
+  await page.locator('[data-act="ytm-add"]').click();
+  expect(await page.evaluate(() => document.querySelector('#ytm-video') === window.__playingFrame)).toBe(true);
+  await page.locator('.ytm-saved-label-btn').click();
+  await expect(page.locator('#ytm-video')).toHaveAttribute('src',
+    'https://www.youtube.com/embed?listType=playlist&list=PLMtYkFCCurnwZJ2k7NOz1VCcBN8aGj8U&playsinline=1&controls=1');
+  expect(popups).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('clicking dock tab names opens their corresponding views', async ({ page }) => {
+  await page.goto('/');
+  for (const [name,title] of [['home','Home'], ['music','Music'], ['cal','Calendar'], ['wled','LED Strips'], ['settings','Settings']]) {
+    const label = page.locator('#dock [data-app="' + name + '"] .app-tab-label');
+    await expect(label).toBeVisible();
+    await label.click();
+    await expect(page.locator('#sheet h1')).toHaveText(title);
+    await page.locator('#sheet .done-btn').click();
+    await expect(page.locator('#sheet')).toBeHidden();
+  }
 });

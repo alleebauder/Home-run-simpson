@@ -34,22 +34,27 @@ Bauder Home has an **LED Strips** app in its dock. It controls WLED strips throu
 
 Source: [Home Assistant WLED integration](https://www.home-assistant.io/integrations/wled).
 
-## YouTube Music playback
+## YouTube Music: play inside Bauder Home
 
-The **Music** app has a YouTube Music section. It can play a song, artist, album, or playlist on household speakers **through Home Assistant and Music Assistant**; there is no direct YouTube Music login inside Bauder Home.
+The **Music** app now has two playback destinations, selected by tapping the **This iPad** or **Home speakers** tab. By default, music plays **on the iPad inside Bauder Home**, without opening a separate YouTube Music website. The app dock's text labels are also tappable, so selecting **Music**, **Calendar**, or another app name opens that view (including in short iPad landscape mode).
 
-### One-time setup
+### This iPad (no Home Assistant required)
 
-1. Install Music Assistant Server on Home Assistant OS or run it as a supported Docker service on your Umbrel/Linux server. Open its own web UI and add the desired speaker/player provider (e.g., Google Cast, Sonos, or a compatible Home Assistant player).
-2. In Music Assistant, set up **YouTube Music** as a music source. This is a community provider requiring **YouTube Music Premium** (free accounts are not supported), a login cookie, and a PO Token generator. Follow the current official [Music Assistant YouTube Music provider guide](https://www.music-assistant.io/music-providers/youtube-music/). **Do not enter login cookies, tokens, or your Google password into Bauder Home or GitHub.**
-3. In Home Assistant go to **Settings → Devices & services → Add integration → Music Assistant**. Confirm Music Assistant has exposed your intended speaker as a `media_player` entity.
-4. In Bauder Home, verify Home Assistant connects normally under Settings → Connections. Open **Music** and choose that Music Assistant speaker under **YouTube Music**.
-5. Search by song, artist, album, or playlist name and choose a media type, or paste a supported YouTube Music playlist link. Tap **Play**. The screen requests playback using Home Assistant's `music_assistant.play_media` action. Normal play/pause, next, previous, and volume still use Home Assistant `media_player` services.
-6. Optionally save up to 12 playlist links, which stay only on your iPad. Each saved playlist has **Play**, **Open** (opens YouTube Music directly), and **Remove**.
+1. Tap the **Music** label or icon on the Bauder Home dock.
+2. With **This iPad** selected, paste a public or embeddable YouTube Music **song/watch link** or **playlist link** and tap **Play on iPad**.
+3. A standard official YouTube player appears right inside the Music tab. Tap its native Play button if Safari prevents autoplay. Audio comes from the iPad.
+4. Save playlists with a name and URL (maximum 12). Tap the playlist's **name** or **Play here** to replace the current inline player without opening another browser tab.
+5. The inline player is not re-created when you save/remove playlists or when unrelated Home Assistant states update. Closing Music stops the inline player; opening Music again starts on the same Music tab ready for another selection.
 
-**Important limitations:** Bauder Home does not log into or scrape YouTube Music and cannot directly retrieve your private library. Music Assistant's YouTube Music provider is unofficial/best-effort and can stop working if YouTube changes authentication or streaming. The provider requires a paid subscription; reconnect/refresh credentials in Music Assistant if its provider stops working. The YouTube Music **Open** link is available even if Home Assistant or Music Assistant is offline. A Home Assistant service call accepting a request does not guarantee a track is available or playback succeeded—check the speaker's state. If you have multiple Music Assistant sources, a song name can resolve to any of them; configure Music Assistant to use the YouTube Music source you prefer. Playback audio goes to the selected household speaker, not necessarily the iPad itself.
+**Important limits:** This uses YouTube's supported iframe video/playlist embed, **not an authenticated YouTube Music player**. It does not sync your private YouTube Music library or support searching YouTube Music by song name on the iPad. You must provide a valid link. Some tracks or playlists prohibit embeds, require sign-in, are unavailable in your region, or cannot autoplay; those cannot be made to play by this app. YouTube's own playback controls, branding, and ads remain intact.
 
-Sources: [Home Assistant Music Assistant integration](https://www.home-assistant.io/integrations/music_assistant/), [Music Assistant Play media](https://www.music-assistant.io/faq/massplaymedia/), [YouTube Music provider](https://www.music-assistant.io/music-providers/youtube-music/).
+### Home speakers (optional)
+
+Tap **Home speakers** to choose a Home Assistant / Music Assistant media player. This mode supports searching by track, artist, album, or playlist name and sending playback through `music_assistant.play_media`. It requires an installed Music Assistant Server with a compatible player and its community YouTube Music provider configured. That provider currently requires YouTube Music Premium. Complete authorization in Music Assistant; never put YouTube authentication tokens in Bauder Home.
+
+The original speaker controls (volume, play/pause, previous/next) remain available in Music. Home speakers play audio on the selected external speaker, not through Bauder Home.
+
+Sources: [YouTube embedded player parameters](https://developers.google.com/youtube/player_parameters), [Home Assistant Music Assistant integration](https://www.home-assistant.io/integrations/music_assistant/), [Music Assistant YouTube Music provider](https://www.music-assistant.io/music-providers/youtube-music/).
 
 ## Features
 

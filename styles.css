@@ -1286,3 +1286,74 @@ button.w:active { transform: scale(.99); }
   .ytm-saved-row { flex-wrap: wrap; }
   .ytm-saved-label { flex-basis: 100%; }
 }
+
+
+/* iPad Music: inline player without leaving Bauder Home */
+.ytm-destination {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 5px; gap: 5px;
+  background: var(--glass);
+  border: 1px solid var(--glass-stroke);
+  border-radius: 17px;
+}
+.ytm-destination button {
+  min-height: 48px; padding: 8px 14px;
+  border-radius: 13px; font-size: 14px; font-weight: 700;
+  transition: background .12s ease;
+}
+.ytm-destination button[aria-pressed="true"] {
+  color: var(--accent-ink); background: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,.09);
+}
+.ytm-local-wrap, .ytm-remote-wrap { display: grid; gap: 12px; }
+.ytm-inline-player {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  min-height: 225px;
+  background: #111; overflow: hidden; border-radius: 18px;
+}
+.ytm-inline-player iframe {
+  position: absolute; width: 100%; height: 100%; inset: 0;
+  display: block; border: 0;
+}
+.ytm-player-empty {
+  display: grid; place-items: center;
+  min-height: 160px; border-radius: 18px;
+  border: 1px dashed var(--glass-stroke);
+  padding: 24px;
+  color: var(--fg-dim); text-align: center; font-size: 14px;
+  background: var(--glass);
+}
+.ytm-saved-label-btn {
+  flex: 1; min-width: 0; text-align: left;
+  font-size: 14px; font-weight: 720;
+  overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; padding: 12px 5px;
+}
+.ytm-saved-label-btn:focus-visible, .ytm-destination button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.ytm-library .ytm-saved-row button.qbtn { min-height: 44px; }
+.ytm-search:has(> .field:only-of-type) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.dock .appbtn { cursor: pointer; min-height: 76px; }
+.dock .appbtn .app-tab-label {
+  display: flex; justify-content: center; align-items: center;
+  width: 100%; min-height: 24px; margin-top: 2px;
+  font-size: 11px; font-weight: 650;
+  line-height: 1.15; pointer-events: auto;
+  touch-action: manipulation;
+}
+@media (max-height: 780px) and (min-aspect-ratio: 1/1) {
+  .dock .appbtn .app-tab-label { display: flex; font-size: 10px; }
+  .dock { min-height: 78px; }
+}
+@media (max-width: 640px) {
+  .ytm-inline-player { min-height: 200px; border-radius: 12px; }
+  .ytm-search:has(> .field:only-of-type) { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ytm-destination button { transition: none; }
+}

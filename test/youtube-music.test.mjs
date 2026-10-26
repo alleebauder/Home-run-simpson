@@ -10,8 +10,8 @@ const start = app.indexOf('/* YOUTUBE_MUSIC_FNS */');
 const end = app.indexOf('/* /YOUTUBE_MUSIC_FNS */', start);
 assert.ok(start >= 0 && end > start, 'YouTube Music helper block exists');
 const helpers = new Function(app.slice(start + '/* YOUTUBE_MUSIC_FNS */'.length, end) +
-  '\nreturn {youtubeMusicUrl, youtubeMusicRequest, YTM_MUSIC_TYPES};')();
-const { youtubeMusicUrl, youtubeMusicRequest } = helpers;
+  '\nreturn {youtubeMusicUrl, youtubeMusicRequest, youtubeInlineEmbed, YTM_MUSIC_TYPES};')();
+const { youtubeMusicUrl, youtubeMusicRequest, youtubeInlineEmbed } = helpers;
 
 test('normalize and allow legitimate YouTube Music playlist URLs', () => {
   const id = 'PLMtYkFCCurnwZJ2k7NOz1VCcBN8aGj8U';
@@ -71,4 +71,26 @@ test('UI guards playback without HA and preserves existing speaker controls', ()
   assert.match(app, /data-act="media"/);
   assert.match(app, /ytm-play-saved/);
   assert.doesNotMatch(app, /ytmusicapi|__Secure-3PAPISID|youtube\.com\/api\/browse/);
+});
+
+test('supported YouTube links are embedded inside Bauder Home, not opened in a new tab', () => {
+  const playlist = 'https://music.youtube.com/playlist?list=PLMtYkFCCurnwZJ2k7NOz1VCcBN8aGj8U';
+  assert.equal(youtubeInlineEmbed(playlist),
+    'https://www.youtube.com/embed?listType=playlist&list=PLMtYkFCCurnwZJ2k7NOz1VCcBN8aGj8U&playsinline=1&controls=1');
+  assert.equal(youtubeInlineEmbed('https://music.youtube.com/watch?v=abcdefghijk'),
+    'https://www.youtube.com/embed/abcdefghijk?playsinline=1&controls=1');
+  for (const bad of ['https://evil.com/watch?v=abcdefghijk', 'data:text/html,x', 'bad link']) {
+    assert.equal(youtubeInlineEmbed(bad), '');
+  }
+  assert.match(app, /id="ytm-video"/);
+  assert.match(app, /allowfullscreen/);
+  assert.match(app, /YTM\.destination === 'ipad'/);
+  assert.doesNotMatch(app, /href="https:\/\/music\.youtube\.com\//);
+  assert.doesNotMatch(app, /target="_blank" aria-label="Open/);
+});
+
+test('dock tab label carries its own open action', () => {
+  assert.match(app, /class="app-tab-label">\$\{esc\(DOCK_LABELS\[a\] \|\| APP_TITLES\[a\]\)\}<\/span>/);
+  assert.match(app, /class="appbtn" data-act="open" data-app="\$\{a\}"/);
+  assert.match(app, /APP\.name === 'music' && YTM\.embedUrl/); // skips closing the player on refresh
 });
