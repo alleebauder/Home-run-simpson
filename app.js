@@ -283,6 +283,26 @@
     return mapped == null ? clone(DEFAULT_LAYOUT[key]) : mapped;
   }
 
+  /* HOME_LAYOUT_FNS */
+  // Pure helpers keep dashboard editing predictable and easy to regression-test.
+  function moveHomeLayoutItem(layout, sourceId, targetId) {
+    if (!Array.isArray(layout) || sourceId === targetId) return layout;
+    const from = layout.indexOf(sourceId), to = layout.indexOf(targetId);
+    if (from < 0 || to < 0) return layout;
+    const next = layout.slice();
+    next.splice(from, 1);
+    next.splice(to, 0, sourceId);
+    return next;
+  }
+  function hideHomeLayoutItem(layout, id) {
+    return Array.isArray(layout) && layout.includes(id) ? layout.filter((item) => item !== id) : layout;
+  }
+  function addHomeLayoutItem(layout, id, known, guest) {
+    if (!Array.isArray(layout) || !known[id] || layout.includes(id) || (guest && known[id][2])) return layout;
+    return layout.concat(id);
+  }
+  /* /HOME_LAYOUT_FNS */
+
   const APP_TITLES = { home: 'Home', cal: 'Calendar', tasks: 'Tasks', airbnb: 'Airbnb', kitchen: 'Kitchen', music: 'Music', security: 'Security', board: 'Message Board', packages: 'Packages', energy: 'Energy', photos: 'Photos', emergency: 'Emergency', settings: 'Settings', assist: 'Assistant' };
   const APP_ICONS = { home: 'home', cal: 'cal', tasks: 'check', airbnb: 'key', kitchen: 'pot', music: 'music', security: 'shield', board: 'msg', packages: 'box', energy: 'bolt', photos: 'photo', emergency: 'sos', settings: 'gear', assist: 'sparkle' };
   const DOCK = ['home', 'cal', 'tasks', 'airbnb', 'kitchen', 'music', 'security', 'board', 'packages', 'energy', 'photos', 'emergency', 'settings'];
@@ -2084,10 +2104,90 @@
 
   const RENDER = { time: wTime, status: wStatus, next: wNext, home: wHome, tasks: wTasks, cam: wCam, kitchen: wKitchen, media: wMedia, board: wBoard, energy: wEnergy, packages: wPackages, emergency: wEmergency, forecast: wForecast, timer: wTimer, bnb: wBnb, count: wCount, ev: wEv, tesla: wTesla };
 
+  let homeEditMode = false;
+  let homeDrag = null;
+
+  function updateHomeLayout(next, label) {
+    if (!privateOK() || next === S.layout.main) return;
+    S.layout.main = next;
+    saveSettings();
+    renderHome();
+    if (label) toast(label);
+  }
+
   function renderHome() {
+    const home = $('#home');
+    // A live Home Assistant update should never interrupt a finger dragging a widget.
+    if (homeDrag) return;
     const key = privateOK() ? 'main' : 'guest';
+    const editing = homeEditMode && privateOK();
     const list = S.layout[key].filter((id) => WIDGET_INFO[id] && (privateOK() || !WIDGET_INFO[id][2]));
-    $('#home').innerHTML = list.map((id) => RENDER[id]()).join('') || '<div class="empty">Add widgets in Settings → Home screen.</div>';
+    home.classList.toggle('is-customizing', editing);
+    if (!editing) {
+      home.innerHTML = list.map((id) => RENDER[id]()).join('') || '<div class="empty">Add widgets in Settings → Home screen.</div>';
+      return;
+    }
+
+    // Inert previews cannot trigger lights, door locks, cameras, or other actions.
+    const slots = list.map((id, i) => {
+      const title = esc(WIDGET_INFO[id][0]);
+      return `<div class="home-edit-slot sz-${WIDGET_INFO[id][1]}" data-home-id="${id}">
+        <div class="home-edit-preview" inert>${RENDER[id]()}</div>
+        <div class="home-edit-toolbar">
+          <span class="home-edit-title" title="${title}">${title}</span>
+          <button type="button" class="home-edit-action" data-act="home-move" data-id="${id}" data-dir="-1" aria-label="Move ${title} earlier" ${i === 0 ? 'disabled' : ''}>←</button>
+          <button type="button" class="home-edit-action" data-act="home-move" data-id="${id}" data-dir="1" aria-label="Move ${title} later" ${i === list.length - 1 ? 'disabled' : ''}>→</button>
+          <button type="button" class="home-edit-action home-edit-remove" data-act="home-hide" data-id="${id}" aria-label="Hide ${title}">×</button>
+        </div>
+        <button type="button" class="home-drag-grip" data-home-grip="${id}" aria-label="Drag ${title} to rearrange">⠿ <span>Drag</span></button>
+      </div>`;
+    }).join('');
+    const available = Object.keys(WIDGET_INFO).filter((id) => !S.layout.main.includes(id));
+    const add = `<div class="home-edit-add">
+      <div class="home-edit-add-copy"><strong>Make this screen yours</strong><span>Drag a handle to rearrange, or use the arrows. Changes save automatically.</span></div>
+      ${available.length ? `<label class="home-edit-add-field"><span>Add a widget</span><select id="home-add-widget" aria-label="Choose widget to add">${available.map((id) => `<option value="${id}">${esc(WIDGET_INFO[id][0])}</option>`).join('')}</select></label><button class="home-edit-add-btn" type="button" data-act="home-add">Add</button>` : '<span class="home-edit-complete">All widgets are on this screen</span>'}
+    </div>`;
+    home.innerHTML = slots + add;
+  }
+
+  // Pointer Events work with touch, Apple Pencil, and mouse; only the drag grip
+  // captures gestures, so scrolling the dashboard remains natural elsewhere.
+  function bindHomeDragging() {
+    const home = $('#home');
+    home.addEventListener('pointerdown', (e) => {
+      const grip = e.target.closest('[data-home-grip]');
+      if (!homeEditMode || !privateOK() || !grip || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      const slot = grip.closest('[data-home-id]');
+      homeDrag = { pointerId: e.pointerId, source: slot.dataset.homeId, target: slot.dataset.homeId };
+      slot.classList.add('is-dragging', 'is-drop-target');
+      grip.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    home.addEventListener('pointermove', (e) => {
+      if (!homeDrag || homeDrag.pointerId !== e.pointerId) return;
+      const slots = $('[data-home-id]', home);
+      const hovered = slots.find((el) => {
+        const r = el.getBoundingClientRect();
+        return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      });
+      if (!hovered) return;
+      homeDrag.target = hovered.dataset.homeId;
+      slots.forEach((el) => el.classList.toggle('is-drop-target', el === hovered));
+    });
+    const finish = (e, cancelled) => {
+      if (!homeDrag || homeDrag.pointerId !== e.pointerId) return;
+      const { source, target } = homeDrag;
+      homeDrag = null;
+      if (!cancelled && source !== target) {
+        updateHomeLayout(moveHomeLayoutItem(S.layout.main, source, target), 'Widget order saved');
+      } else {
+        $('[data-home-id]', home).forEach((el) => el.classList.remove('is-dragging', 'is-drop-target'));
+      }
+      e.preventDefault();
+    };
+    home.addEventListener('pointerup', (e) => finish(e, false));
+    home.addEventListener('pointercancel', (e) => finish(e, true));
+    home.addEventListener('lostpointercapture', (e) => { if (homeDrag && homeDrag.pointerId === e.pointerId) finish(e, true); });
   }
 
   function haStatusLabel() { return { sample: 'Sample data', connecting: 'Connecting…', connected: 'Home Assistant', retrying: 'Reconnecting…', error: 'Fix connection' }[H.status] || 'Home Assistant'; }
@@ -2118,6 +2218,7 @@
       <button type="button" class="chip" data-act="profiles" aria-haspopup="true" aria-label="Switch profile, current ${esc(p.name)}"><span class="avatar" style="--c:${p.color}">${esc((p.name || '?').charAt(0).toUpperCase())}</span><span class="label">${esc(p.name)}</span></button>
       <div class="greet"><div class="greeting">${greeting()}${named ? ', ' + esc(p.name) : ''}</div><div class="summary">${summaryHTML()}</div></div>
       <span class="spacer"></span>
+      ${privateOK() ? `<button type="button" class="chip plain home-customize-chip" data-act="home-edit" aria-pressed="${homeEditMode}" aria-label="${homeEditMode ? 'Finish customizing Home' : 'Customize Home screen'}">${icon('edit')}<span class="label">${homeEditMode ? 'Done' : 'Customize'}</span></button>` : ''}
       ${t ? `<button type="button" class="chip plain timer-pill" data-act="open" data-app="kitchen" data-ktab="timers">${icon('timer')}<span class="num" id="timer-pill-text">${fmtLeft(t.end - Date.now())}</span></button>` : ''}
       <button type="button" class="chip plain" data-act="open" data-app="assist" aria-label="Ask the household assistant">${icon('sparkle')}<span class="label">Ask</span></button>
       <button type="button" class="chip plain" data-act="open" data-app="settings" data-stab="connect"><span class="dot ${haDot()}"></span><span class="label">${haStatusLabel()}</span></button>`;
@@ -2127,6 +2228,10 @@
   }
 
   function renderModes() {
+    if (homeEditMode && privateOK()) {
+      $('#modes').innerHTML = '<div class="home-edit-hint">Personalize your dashboard <span>· Drag widgets or use the arrows to rearrange</span></div><button type="button" class="home-edit-done" data-act="home-edit">Done editing</button>';
+      return;
+    }
     const recent = S.lastMode && Date.now() - S.lastMode.at < 6 * 3600000 ? S.lastMode.id : '';
     $('#modes').innerHTML = MODE_DEFS.map((d) => `<button type="button" class="mode" data-act="mode" data-mode="${d.id}" aria-pressed="${recent === d.id}">${icon(d.icon)}${d.name}</button>`).join('');
   }
@@ -2152,6 +2257,13 @@
 
   async function openApp(name, opts = {}) {
     if (!APP_TITLES[name]) return;
+    if (homeEditMode) {
+      homeEditMode = false;
+      homeDrag = null;
+      renderTop();
+      renderModes();
+      renderHome();
+    }
     if (!privateOK()) {
       if (PRIVATE_APPS.includes(name)) { toast('That’s hidden in Guest mode. Switch profiles to open it.'); return; }
       if (name === 'settings' && S.pin && !(await askPin('Enter PIN to open Settings'))) return;
@@ -2853,7 +2965,7 @@
     return a > b ? h >= a || h < b : h >= a && h < b;
   }
   function blockIdle() {
-    return !!ringing || !!hazard || !$('#bell').hidden || !$('#pin').hidden || (APP.name === 'kitchen' && (APP.recipeId || APP.adding)) || APP.name === 'settings' || APP.name === 'assist' ||
+    return homeEditMode || !!ringing || !!hazard || !$('#bell').hidden || !$('#pin').hidden || (APP.name === 'kitchen' && (APP.recipeId || APP.adding)) || APP.name === 'settings' || APP.name === 'assist' ||
       (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName));
   }
   function enterIdle(night) {
@@ -3074,6 +3186,33 @@
   }
 
   const actions = {
+    'home-edit': () => {
+      if (!privateOK()) return;
+      homeEditMode = !homeEditMode;
+      homeDrag = null;
+      renderTop();
+      renderModes();
+      renderHome();
+      sizeGrid();
+      if (homeEditMode) toast('Customize Home: drag a handle or use the arrows.');
+    },
+    'home-move': (el) => {
+      if (!homeEditMode || !privateOK()) return;
+      const list = S.layout.main;
+      const index = list.indexOf(el.dataset.id);
+      const target = list[index + Number(el.dataset.dir)];
+      if (index < 0 || !target) return;
+      updateHomeLayout(moveHomeLayoutItem(list, el.dataset.id, target), 'Widget moved');
+    },
+    'home-hide': (el) => {
+      if (!homeEditMode || !privateOK()) return;
+      updateHomeLayout(hideHomeLayoutItem(S.layout.main, el.dataset.id), 'Widget hidden. Add it back below.');
+    },
+    'home-add': () => {
+      if (!homeEditMode || !privateOK()) return;
+      const id = $('#home-add-widget')?.value;
+      updateHomeLayout(addHomeLayoutItem(S.layout.main, id, WIDGET_INFO, false), 'Widget added');
+    },
     open: (el) => {
       if (!$('#hazard').hidden) stopHazard();
       if (!$('#bell').hidden) $('#bell').hidden = true;
@@ -3107,6 +3246,8 @@
       if (!p || p.id === S.profile) return;
       if (p.showPrivate && !privateOK() && S.pin && !(await askPin(`Enter PIN for ${p.name}`))) return;
       S.profile = p.id;
+      homeEditMode = false;
+      homeDrag = null;
       saveSettings();
       if (APP.name && !p.showPrivate && PRIVATE_APPS.concat('settings').includes(APP.name)) closeApp();
       renderAll();
@@ -3506,6 +3647,7 @@
     loadPowerHistory(powerEntity());
     renderAll();
     sizeGrid();
+    bindHomeDragging();
     window.addEventListener('resize', sizeGrid);
     window.addEventListener('orientationchange', () => setTimeout(sizeGrid, 300));
     haConnect();
