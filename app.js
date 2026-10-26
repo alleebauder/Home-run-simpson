@@ -1684,6 +1684,9 @@
     const chosen = ASSIST_PRESETS[category] || ASSIST_PRESETS.Everyday;
     return allowPrivate ? chosen : chosen.filter((query) => !privateQueries.test(query));
   }
+  function assistantCategories(allowPrivate) {
+    return Object.keys(ASSIST_PRESETS).filter((category) => assistantPresets(category, allowPrivate).length);
+  }
   /* /ASSIST_PRESET_FNS */
 
   function resetAssistant() {
@@ -1766,7 +1769,13 @@
     if ((m = /^(?:open|show(?: me)?|go to)\s+(?:the\s+|my\s+)?([a-z ]+?)(?:\s+app)?$/.exec(t))) {
       const map = { airbnb: 'airbnb', cleaning: 'airbnb', cleanings: 'airbnb', kitchen: 'kitchen', recipes: 'kitchen', 'meal plan': 'kitchen', calendar: 'cal', tasks: 'tasks', lists: 'tasks', groceries: 'tasks', 'grocery list': 'tasks', chores: 'tasks', music: 'music', speakers: 'music', cameras: 'security', camera: 'security', security: 'security', photos: 'photos', settings: 'settings', emergency: 'emergency', 'emergency info': 'emergency', packages: 'packages', energy: 'energy', board: 'board', 'message board': 'board', messages: 'board', timers: 'kitchen', home: 'home', devices: 'home' };
       const a = map[m[1]];
-      if (a) { setTimeout(() => openApp(a, a === 'kitchen' && /timer/.test(m[1]) ? { ktab: 'timers' } : {}), 500); return `Opening ${APP_TITLES[a]}.`; }
+      if (a) {
+        const opts = a === 'kitchen'
+          ? { ktab: /timer/.test(m[1]) ? 'timers' : /recipe/.test(m[1]) ? 'recipes' : 'plan' }
+          : a === 'tasks' ? { ttab: /groc/.test(m[1]) ? 'groceries' : /chore/.test(m[1]) ? 'chores' : /remind/.test(m[1]) ? 'reminders' : undefined } : {};
+        setTimeout(() => openApp(a, opts), 500);
+        return `Opening ${APP_TITLES[a]}.`;
+      }
     }
     if (/^(?:emergency|call 911|911|help)$/.test(t)) { setTimeout(() => openApp('emergency'), 400); return 'Opening emergency info. If anyone is in danger, call 911 from a phone.'; }
     return null;
@@ -2337,6 +2346,7 @@
       dialog.style.pointerEvents = '';
     }
     if (firstOpen) sheetReturnFocus = document.activeElement;
+    if (APP.name === 'assist' && name !== 'assist') resetAssistant();
     if (name === 'assist' && APP.name !== 'assist') resetAssistant();
     APP.name = name;
     if (opts.ktab) { APP.ktab = opts.ktab; APP.recipeId = null; APP.adding = false; }
@@ -2733,7 +2743,8 @@
 
   // ---- Assistant
   function chatHTML() {
-    const categories = Object.keys(ASSIST_PRESETS);
+    const categories = assistantCategories(privateOK());
+    if (!categories.includes(ASSIST.category)) ASSIST.category = 'Everyday';
     const chooser = `<div class="assist-preset-wrap">
       <div class="assist-preset-top"><strong>Quick requests</strong><span>Each request starts a fresh conversation</span></div>
       <div class="assist-categories" role="group" aria-label="Suggested request categories">
@@ -3357,11 +3368,13 @@
       if (!p || p.id === S.profile) return;
       if (p.showPrivate && !privateOK() && S.pin && !(await askPin(`Enter PIN for ${p.name}`))) return;
       S.profile = p.id;
+      if (APP.name === 'assist') resetAssistant();
       homeEditMode = false;
       homeDrag = null;
       saveSettings();
       if (APP.name && !p.showPrivate && PRIVATE_APPS.concat('settings').includes(APP.name)) closeApp();
       renderAll();
+      if (APP.name === 'assist') renderApp();
       toast(p.showPrivate ? `Hi, ${p.name}` : 'Guest mode. Private information is hidden.');
     },
     'pin-key': (el) => pinKey(el.dataset.k),
