@@ -75,8 +75,8 @@ test('Music Assistant service calls use selected speaker without direct YouTube 
   });
   await page.goto('/');
   await page.locator('#dock [data-app="music"]').click();
-  await expect(page.locator('#ytm-player option')).toHaveCount(3);
   await page.locator('[data-act="ytm-destination"][data-destination="speakers"]').click();
+  await expect(page.locator('#ytm-player option')).toHaveCount(3);
   await page.locator('#ytm-player').selectOption('media_player.ma_living_room');
   await expect(page.locator('[data-act="ytm-play"]')).toBeEnabled();
   await page.locator('#ytm-query').fill('Queen - Bohemian Rhapsody');
