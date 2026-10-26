@@ -807,3 +807,107 @@ div.tile-main { cursor: default; }
 .w-bnb .task { min-height: 30px; }
 .w-bnb .check-btn { width: 22px; height: 22px; }
 .task .tx .muted { font-weight: 400; }
+
+
+/* Direct-on-home iPad customization. Normal widgets are fully inert in this mode;
+   only the visible edit controls can receive pointer or keyboard input. */
+.home-customize-chip[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.home-edit-hint {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 42px; padding: 8px 16px; border-radius: 18px;
+  background: var(--glass-strong); border: 1px solid var(--glass-stroke);
+  font-size: 14px; font-weight: 700; min-width: 0;
+}
+.home-edit-hint span { font-weight: 500; color: var(--fg-dim); }
+.home-edit-done {
+  min-height: 42px; flex: none; padding: 0 18px; border-radius: 16px;
+  background: var(--accent); color: var(--accent-ink); font-weight: 750;
+}
+.home-edit-slot {
+  position: relative; isolation: isolate; min-width: 0;
+  min-height: 0; height: 100%; border-radius: var(--r-widget);
+  transition: transform .18s ease, opacity .18s ease, box-shadow .18s ease;
+}
+.home-edit-preview { width: 100%; height: 100%; pointer-events: none; filter: saturate(.75); }
+.home-edit-preview > .w { width: 100%; height: 100%; }
+.home-edit-slot::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  border-radius: inherit; background: color-mix(in srgb, var(--bg) 24%, transparent);
+  border: 2px dashed color-mix(in srgb, var(--fg) 25%, transparent);
+}
+.home-edit-toolbar {
+  position: absolute; z-index: 3; top: 10px; left: 10px; right: 10px;
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 5px; min-width: 0; padding: 6px;
+  border-radius: 15px; background: var(--sheet);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 3px 12px rgba(0,0,0,.12);
+}
+.home-edit-title {
+  margin-right: auto; padding-left: 6px; font-size: 12px; font-weight: 750;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0;
+}
+.home-edit-action {
+  display: grid; place-items: center; width: 34px; height: 34px;
+  min-width: 34px; border-radius: 10px; background: var(--glass-strong);
+  font: 750 22px/1 var(--font-round); color: var(--fg);
+}
+.home-edit-action:disabled { opacity: .25; cursor: default; }
+.home-edit-remove { color: var(--crit); }
+.home-drag-grip {
+  position: absolute; z-index: 3; bottom: 12px; left: 50%;
+  transform: translateX(-50%); display: flex; align-items: center; justify-content: center;
+  gap: 7px; min-width: 116px; min-height: 44px; padding: 8px 15px;
+  border-radius: 14px; background: var(--accent); color: var(--accent-ink);
+  font-size: 18px; font-weight: 750; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab;
+}
+.home-drag-grip span { font-size: 13px; }
+.home-drag-grip:active { cursor: grabbing; }
+.home-edit-slot.is-dragging { opacity: .68; transform: scale(.975); }
+.home-edit-slot.is-drop-target {
+  outline: 3px solid var(--accent); outline-offset: -3px;
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+.home-edit-add {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap;
+  align-items: center; align-content: center; gap: 10px 14px;
+  min-height: 128px; padding: 18px 20px; border-radius: var(--r-widget);
+  border: 1px dashed var(--glass-stroke); background: var(--glass);
+}
+.home-edit-add-copy { display: flex; flex: 1 1 240px; flex-direction: column; gap: 5px; min-width: 0; }
+.home-edit-add-copy strong { font: 750 17px/1.2 var(--font-round); }
+.home-edit-add-copy span, .home-edit-complete { color: var(--fg-dim); font-size: 13px; }
+.home-edit-add-field { display: grid; gap: 5px; font-size: 12px; font-weight: 700; }
+.home-edit-add-field select {
+  max-width: 240px; min-width: 180px; min-height: 42px;
+  padding: 0 12px; border-radius: 12px;
+  color: var(--fg); border: 1px solid var(--glass-stroke); background: var(--field);
+}
+.home-edit-add-btn {
+  align-self: end; min-height: 42px; padding: 0 18px;
+  background: var(--accent); color: var(--accent-ink);
+  border-radius: 12px; font-weight: 700;
+}
+.home-edit-action:focus-visible, .home-drag-grip:focus-visible,
+.home-edit-add-btn:focus-visible, .home-customize-chip:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 3px;
+}
+@media (max-aspect-ratio: 1/1) {
+  .home > .home-edit-slot { min-height: 176px; }
+}
+@media (max-width: 640px) {
+  .home > .home-edit-slot { grid-column: auto; grid-row: auto; min-height: 175px; }
+  .home > .home-edit-slot.sz-large { min-height: 330px; }
+  .home-edit-title { font-size: 13px; }
+  .home-edit-add-field select { max-width: 190px; }
+  .home-edit-hint span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-edit-slot { transition: none; }
+}

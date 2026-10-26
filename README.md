@@ -35,7 +35,9 @@ It's a web app that runs on iPadOS, not a replacement operating system. There's 
 | 16 | Emergency info | 911 and your address in large type, contacts, gas/water/electric shutoffs, extinguishers, meeting spot, medical notes and a monthly smoke alarm test log. Visible in Guest mode so sitters can use it. |
 | 17 | Airbnb and cleaning | Status for each listing, a cleaning schedule for every check-out with same-day turnovers flagged, and upcoming stays, from your Airbnb calendar links. Cleanings show on the family calendar and can be checked off. |
 
-The home screen is a widget gallery. In **Settings → Home screen** you choose and order widgets separately for the family screen and the guest screen. The first screen holds 12 squares (4 across, 3 down) and the rest scroll.
+The home screen is a widget gallery. **Tap Customize in the top bar** to edit the family dashboard directly on your iPad. Drag the orange handle (touch, Apple Pencil or mouse) to reorder widgets, or use the accessible left/right buttons. Hide a widget with ×, or choose one from **Add a widget** at the bottom. Tap **Done** to return to normal controls. The real widget controls are disabled while customizing, so an edit gesture cannot accidentally operate smart-home devices. Changes are saved locally on the iPad. Customization pauses the idle clock.
+
+In **Settings → Home screen** you can also choose and order widgets separately for family and guest screens, including configuring the guest-safe layout. The first screen holds 12 squares (4 across, 3 down) and the rest scroll.
 
 **Countdown** (layout id `count`) is one of those widgets. It shows how many days remain until a date, counted in Pacific time. The default is June 1, 2027, with the label “June 1, 2027”. Change the date and the label in **Settings → Home screen**. On the day itself it says Today, and after that it counts the days since. The date and label stay on the iPad. A home screen that still has the old Inspections square shows the countdown in that same spot.
 
