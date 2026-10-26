@@ -1140,3 +1140,21 @@ button.w:active { transform: scale(.99); }
   .wall { animation: none; }
   .appbtn, .chip, .w, .qbtn, .assist-preset, .assist-category { transition: none; }
 }
+
+/* iPad Safari stability: a moving wallpaper behind 30–40px full-screen
+   backdrop filters keeps the compositor busy and can prevent taps from
+   settling. Preserve translucent colors without continuously repainting
+   the entire screen. */
+.wall { animation: none; transform: none; }
+.sheet {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--bg);
+}
+@media (hover: none) and (pointer: coarse) {
+  .w, .dock, .chip, .mode, .pop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--glass-strong);
+  }
+}
