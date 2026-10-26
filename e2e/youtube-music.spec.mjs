@@ -90,7 +90,7 @@ test('Music Assistant service calls use selected speaker without direct YouTube 
   await page.locator('#ytm-label').fill('Family Playlist');
   await page.locator('#ytm-url').fill(playlist);
   await page.locator('[data-act="ytm-add"]').click();
-  await page.locator('[data-act="ytm-play-saved"]').click();
+  await page.locator('.ytm-saved-label-btn[data-act="ytm-play-saved"]').click();
   await expect.poll(async () => page.evaluate(() =>
     window.__haCommands.filter(c => c.type === 'call_service' && c.domain === 'music_assistant').length)).toBe(2);
 
