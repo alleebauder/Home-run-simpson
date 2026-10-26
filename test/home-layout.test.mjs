@@ -71,7 +71,7 @@ test('dashboard editor prevents accidental device actions and respects private p
 
 test('updated offline cache picks up the new styles and logic', () => {
   const sw = read('sw.js');
-  assert.match(sw, /bauder-home-v10/);
+  assert.match(sw, /bauder-home-v11/);
   assert.match(sw, /\.\/app\.js/);
   assert.match(sw, /\.\/styles\.css/);
 });
