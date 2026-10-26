@@ -4,6 +4,10 @@ A home command center for iPad, modeled on Apple's HomeView. The main screen ans
 
 It's a web app that runs on iPadOS, not a replacement operating system. There's no build step. You add it to the iPad's home screen and it runs full screen. Until Home Assistant and the Google Calendar and Airbnb feed are connected, every widget shows sample data tagged **Sample**.
 
+### Assistant reopen fix
+
+The Assistant dialog's exit animation is cancelled and fully cleaned up after it closes. This prevents a Web Animations API `fill: forwards` opacity value from keeping the next Assistant session invisible and blocking interaction on iPad. A fast reopen during the closing animation cancels the exit safely. This does **not** restart Home Assistant: each new request still starts a fresh AI conversation.
+
 ## Features
 
 ### Core
