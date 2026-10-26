@@ -2847,7 +2847,7 @@
   function youtubeSavedHTML() {
     const selected = youtubeMusicPlayer();
     const isLocal = YTM.destination === 'ipad';
-    const saved = S.youtubeMusic.playlists.map((p, i) => `<div class="ytm-saved-row"><button type="button" class="ytm-saved-label-btn" data-act="ytm-play-saved" data-index="${i}" aria-label="Play ${esc(p.label)} in ${isLocal ? 'this iPad' : 'home speakers'}" ${!isLocal && (!selected || YTM.busy) ? 'disabled' : ''}>${esc(p.label)}</button><button type="button" class="qbtn sm" data-act="ytm-play-saved" data-index="${i}" ${!isLocal && (!selected || YTM.busy) ? 'disabled' : ''}>Play here</button><button type="button" class="qbtn sm" data-act="ytm-remove" data-index="${i}" aria-label="Remove ${esc(p.label)}">Remove</button></div>`).join('');
+    const saved = S.youtubeMusic.playlists.map((p, i) => `<div class="ytm-saved-row"><button type="button" class="ytm-saved-label-btn" data-act="ytm-play-saved" data-index="${i}" aria-label="Play ${esc(p.label)} in ${isLocal ? 'this iPad' : 'home speakers'}" ${!isLocal && (!selected || YTM.busy) ? 'disabled' : ''}>${esc(p.label)}</button><button type="button" class="qbtn sm" data-act="ytm-play-saved" data-index="${i}" ${!isLocal && (!selected || YTM.busy) ? 'disabled' : ''}>${isLocal ? 'Play here' : 'Play on speakers'}</button><button type="button" class="qbtn sm" data-act="ytm-remove" data-index="${i}" aria-label="Remove ${esc(p.label)}">Remove</button></div>`).join('');
     return '<strong>Saved playlists</strong>' + (saved || '<p class="help">Save a YouTube Music playlist link below. Tap its name to play it here.</p>');
   }
   function youtubeMusicPanel() {
