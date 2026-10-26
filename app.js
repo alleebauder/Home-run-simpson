@@ -983,6 +983,7 @@
     evs.sort((a, b) => a.start - b.start);
     CAL.events = evs;
     scheduleRender();
+    if (APP.name === 'cal') renderApp();
   }
   const visibleEvents = () => CAL.events.filter((e) => !APP.calHide.has(calOwner(e.cal)));
   const upcoming = () => { const now = new Date(); return CAL.events.filter((e) => e.end > now); };
@@ -2315,7 +2316,6 @@
   };
 
   let sheetReturnFocus = null;
-  let sheetExitAnimation = null;
 
   // Keep keyboard interaction inside the application dialog and return focus
   // to the launching control after it closes (or the nearest surviving control).
@@ -2332,11 +2332,6 @@
     // Calendar) throws while being rendered or updated by live data.
     console.error('Bauder Home could not open ' + (name || 'app'), error);
     const dialog = $('#sheet');
-    if (sheetExitAnimation) {
-      const animation = sheetExitAnimation;
-      sheetExitAnimation = null;
-      try { animation.cancel(); } catch (_) { /* already finished */ }
-    }
     APP.name = null;
     dialog.hidden = true;
     dialog.innerHTML = '';
@@ -2364,12 +2359,7 @@
     if (name !== APP.name) { APP.confirm = null; selectedPhotos.clear(); APP.emEdit = false; }
     if (name !== 'kitchen') { APP.recipeId = null; APP.adding = false; APP.mealEdit = null; APP.mealPath = {}; }
     const dialog = $('#sheet');
-    const firstOpen = dialog.hidden || sheetExitAnimation !== null;
-    if (sheetExitAnimation) {
-      sheetExitAnimation.cancel();
-      sheetExitAnimation = null;
-      dialog.style.pointerEvents = '';
-    }
+    const firstOpen = dialog.hidden;
     if (firstOpen) sheetReturnFocus = document.activeElement;
     if (APP.name === 'assist' && name !== 'assist') resetAssistant();
     if (name === 'assist' && APP.name !== 'assist') resetAssistant();
@@ -2405,44 +2395,14 @@
     APP.adding = false;
     APP.mealEdit = null;
     APP.mealPath = {};
-    renderAll();
-    const finish = () => {
-      dialog.hidden = true;
-      dialog.innerHTML = '';
-      dialog.style.pointerEvents = '';
-      $('.app').inert = false;
-      focusAfterSheet(closingName);
-    };
-    if (typeof dialog.animate !== 'function' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      finish();
-      return;
-    }
-    dialog.style.pointerEvents = 'none';
-    let animation;
-    try {
-      animation = dialog.animate([
-        { opacity: 1, transform: 'translateY(0) scale(1)' },
-        { opacity: 0, transform: 'translateY(16px) scale(.992)' },
-      ], { duration: 190, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' });
-    } catch (e) {
-      // If Safari cannot animate this panel, close it normally instead of
-      // leaving an unclickable full-screen overlay.
-      finish();
-      return;
-    }
-    sheetExitAnimation = animation;
-    const settle = () => {
-      if (sheetExitAnimation !== animation) return; // Reopened while closing.
-      sheetExitAnimation = null;
-      // WAAPI fill:'forwards' survives hiding the element. Without cancel(),
-      // the NEXT Assistant open stays at opacity:0 despite being interactive.
-      animation.cancel();
-      finish();
-    };
-    animation.finished.then(settle).catch(() => {
-      // An unexpected cancellation must not leave the home screen inert.
-      if (sheetExitAnimation === animation) settle();
-    });
+    // Close deterministically. The previous WAAPI transition could persist
+    // across opens on iPad, retain invisible overlays and destabilize buttons.
+    dialog.hidden = true;
+    dialog.innerHTML = '';
+    dialog.style.pointerEvents = '';
+    $('.app').inert = false;
+    try { renderAll(); } catch (error) { console.error('Home refresh after closing failed', error); }
+    focusAfterSheet(closingName);
   }
 
   function renderApp() {
@@ -3262,7 +3222,9 @@
     renderQueued = true;
     requestAnimationFrame(() => { renderQueued = false; renderAll(); });
   }
-  const LIVE_APPS = ['home', 'cal', 'tasks', 'airbnb', 'music', 'security', 'energy', 'board', 'packages', 'kitchen'];
+  // Calendar has its own refresh path. Rebuilding it for every unrelated
+  // Home Assistant sensor update interrupts touch interactions on iPad.
+  const LIVE_APPS = ['home', 'tasks', 'airbnb', 'music', 'security', 'energy', 'board', 'packages', 'kitchen'];
   function renderAll() {
     renderTop();
     renderModes();
