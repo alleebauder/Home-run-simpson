@@ -1668,7 +1668,40 @@
   }
 
   // ============================================================ assistant
-  const ASSIST = { log: [], cid: null, listening: false, rec: null };
+  const ASSIST = { log: [], cid: null, listening: false, rec: null, busy: false, category: 'Everyday', epoch: 0 };
+
+  /* ASSIST_PRESET_FNS */
+  const ASSIST_PRESETS = {
+    Everyday: ["What's next today?", "Is the house okay?", "What's the weather?", "What's for dinner?", "Open calendar", "Open groceries"],
+    'Smart home': ["Are the doors locked?", "Is the garage open?", "Turn off all lights", "Lock all doors", "Open security", "Open devices"],
+    Family: ["What's next today?", "Open calendar", "Open tasks", "Open groceries", "Open message board", "Check Airbnb cleanings"],
+    Kitchen: ["What's for dinner?", "Open meal plan", "Open recipes", "Set a timer for 5 minutes", "Set a timer for 10 minutes", "Add milk to groceries"],
+    Routines: ["Run morning", "Run cooking", "Run leaving", "Run evening", "Run bedtime"],
+    Explore: ["Open cameras", "Open energy", "Open music", "Open photos", "Open emergency info", "What's the weather?"],
+  };
+  function assistantPresets(category, allowPrivate) {
+    const privateQueries = /(?:calendar|tasks|groceries|message board|airbnb|cleanings)/i;
+    const chosen = ASSIST_PRESETS[category] || ASSIST_PRESETS.Everyday;
+    return allowPrivate ? chosen : chosen.filter((query) => !privateQueries.test(query));
+  }
+  /* /ASSIST_PRESET_FNS */
+
+  function resetAssistant() {
+    ASSIST.epoch += 1;
+    ASSIST.log = [];
+    ASSIST.cid = null;
+    ASSIST.busy = false;
+    ASSIST.category = 'Everyday';
+    const rec = ASSIST.rec;
+    ASSIST.rec = null;
+    ASSIST.listening = false;
+    if (rec) {
+      rec.onend = null;
+      rec.onresult = null;
+      try { rec.abort(); } catch (e) { /* recognition may already be stopped */ }
+    }
+    if ('speechSynthesis' in window) try { speechSynthesis.cancel(); } catch (e) { /* optional */ }
+  }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const NUMW = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, 'forty-five': 45, sixty: 60, ninety: 90, a: 1, an: 1 };
   const numOf = (s) => (Number.isFinite(+s) ? +s : NUMW[String(s).toLowerCase()]);
@@ -1766,23 +1799,34 @@
 
   async function assist(text) {
     text = String(text || '').trim();
-    if (!text) return;
-    ASSIST.log.push({ who: 'user', text });
+    if (!text || ASSIST.busy) return;
+    // Every request is a fresh Home Assistant conversation. Never reuse the
+    // conversation_id returned by the backend across separate interactions.
+    ASSIST.cid = null;
+    ASSIST.busy = true;
+    const epoch = ++ASSIST.epoch;
+    ASSIST.log = [{ who: 'user', text }];
     renderAssistChat();
     let reply = null;
-    if (!privateOK() && /\b(unlock|disarm|open (?:the )?garage)\b/i.test(text)) reply = 'Switch to a family profile to do that.';
-    if (reply == null) reply = localIntent(text);
-    if (reply == null && H.live) {
-      try {
-        const r = await haSend({ type: 'conversation/process', text, language: (navigator.language || 'en').slice(0, 2), conversation_id: ASSIST.cid || undefined });
-        ASSIST.cid = r?.conversation_id || ASSIST.cid;
-        reply = r?.response?.speech?.plain?.speech || 'Done.';
-      } catch (e) { reply = 'Home Assistant didn’t answer. Check the connection in Settings.'; }
+    try {
+      if (!privateOK() && /\b(unlock|disarm|open (?:the )?garage)\b/i.test(text)) reply = 'Switch to a family profile to do that.';
+      if (reply == null) reply = localIntent(text);
+      if (reply == null && H.live) {
+        try {
+          const r = await haSend({ type: 'conversation/process', text, language: (navigator.language || 'en').slice(0, 2) });
+          reply = r?.response?.speech?.plain?.speech || 'Done.';
+        } catch (e) { reply = 'Home Assistant didn’t answer. Check the connection in Settings.'; }
+      }
+      if (reply == null) reply = demoIntent(text);
+      if (reply == null) reply = 'I can set timers, add to lists, run modes, check the house, and tell you what’s next. Connect Home Assistant to control any device by voice.';
+    } catch (e) {
+      reply = 'That request could not be completed. Please try again.';
+    } finally {
+      if (epoch !== ASSIST.epoch) return;
+      ASSIST.cid = null;
+      ASSIST.busy = false;
     }
-    if (reply == null) reply = demoIntent(text);
-    if (reply == null) reply = 'I can set timers, add to lists, run modes, check the house, and tell you what’s next. Connect Home Assistant to control any device by voice.';
     ASSIST.log.push({ who: 'bot', text: reply });
-    if (ASSIST.log.length > 40) ASSIST.log.splice(0, ASSIST.log.length - 40);
     renderAssistChat();
     speak(reply);
   }
@@ -1808,7 +1852,9 @@
     rec.onerror = () => { /* handled in onend */ };
     rec.onend = () => {
       ASSIST.listening = false;
+      ASSIST.rec = null;
       updateMic();
+      if (APP.name !== 'assist') return;
       const inp = $('#ask-input');
       const txt = (finalText || inp?.value || '').trim();
       if (txt) { if (inp) inp.value = ''; assist(txt); }
@@ -2165,7 +2211,7 @@
     });
     home.addEventListener('pointermove', (e) => {
       if (!homeDrag || homeDrag.pointerId !== e.pointerId) return;
-      const slots = $('[data-home-id]', home);
+      const slots = $$('[data-home-id]', home);
       const hovered = slots.find((el) => {
         const r = el.getBoundingClientRect();
         return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
@@ -2181,7 +2227,7 @@
       if (!cancelled && source !== target) {
         updateHomeLayout(moveHomeLayoutItem(S.layout.main, source, target), 'Widget order saved');
       } else {
-        $('[data-home-id]', home).forEach((el) => el.classList.remove('is-dragging', 'is-drop-target'));
+        $$('[data-home-id]', home).forEach((el) => el.classList.remove('is-dragging', 'is-drop-target'));
       }
       e.preventDefault();
     };
@@ -2291,6 +2337,7 @@
       dialog.style.pointerEvents = '';
     }
     if (firstOpen) sheetReturnFocus = document.activeElement;
+    if (name === 'assist' && APP.name !== 'assist') resetAssistant();
     APP.name = name;
     if (opts.ktab) { APP.ktab = opts.ktab; APP.recipeId = null; APP.adding = false; }
     if (opts.ttab) APP.ttab = opts.ttab;
@@ -2309,6 +2356,7 @@
   function closeApp() {
     if (!APP.name) return;
     const closingName = APP.name;
+    if (closingName === 'assist') resetAssistant();
     const dialog = $('#sheet');
     APP.name = null;
     APP.recipeId = null;
@@ -2685,21 +2733,35 @@
 
   // ---- Assistant
   function chatHTML() {
-    const examples = ['What’s next today?', 'Is the house okay?', 'Set a timer for 10 minutes', 'Add milk and eggs to groceries', 'Run bedtime', 'What’s for dinner?'];
-    if (!ASSIST.log.length) return `<div class="msg bot">Hi. Ask me about the family schedule, the house, timers, lists or modes.${H.live ? ' Anything else goes to Home Assistant Assist.' : ''}</div><div class="quick">${examples.map((e) => `<button type="button" class="qbtn sm" data-act="ask-example" data-q="${esc(e)}">${esc(e)}</button>`).join('')}</div>`;
-    return ASSIST.log.map((m) => `<div class="msg ${m.who}">${esc(m.text)}</div>`).join('');
+    const categories = Object.keys(ASSIST_PRESETS);
+    const chooser = `<div class="assist-preset-wrap">
+      <div class="assist-preset-top"><strong>Quick requests</strong><span>Each request starts a fresh conversation</span></div>
+      <div class="assist-categories" role="group" aria-label="Suggested request categories">
+        ${categories.map((category) => `<button type="button" class="assist-category" data-act="ask-category" data-category="${esc(category)}" aria-pressed="${ASSIST.category === category}">${esc(category)}</button>`).join('')}
+      </div>
+      <div class="assist-presets">
+        ${assistantPresets(ASSIST.category, privateOK()).map((q) => `<button type="button" class="assist-preset" data-act="ask-example" data-q="${esc(q)}" ${ASSIST.busy ? 'disabled' : ''}>${esc(q)}</button>`).join('')}
+      </div>
+    </div>`;
+    const messages = ASSIST.log.length
+      ? `<div class="assist-conversation" role="log" aria-label="Latest request">${ASSIST.log.map((m) => `<div class="msg ${m.who}">${esc(m.text)}</div>`).join('')}${ASSIST.busy ? '<div class="msg bot" aria-live="polite">Working on that…</div>' : ''}</div><div class="assist-fresh"><span>${ASSIST.busy ? 'Processing this request' : 'Ready for a new request'}</span><button type="button" class="qbtn sm" data-act="ask-reset" ${ASSIST.busy ? 'disabled' : ''}>Start fresh</button></div>`
+      : `<div class="assist-welcome"><div class="assist-welcome-icon">${icon('sparkle')}</div><strong>How can I help?</strong><p>Get answers and control your home. ${H.live ? 'Home Assistant handles supported device requests.' : 'Connect Home Assistant for live device control.'}</p></div>`;
+    return messages + chooser;
   }
   function appAssist() {
     return `<div class="chat" id="chat">${chatHTML()}</div>
-      <form class="ask-row" data-form="ask"><button type="button" class="mic" id="mic" data-act="mic" aria-label="Speak" aria-pressed="false">${icon('mic')}</button><input id="ask-input" placeholder="Type or tap the mic" autocomplete="off" enterkeyhint="send"><button type="submit" class="send" aria-label="Send">${icon('send')}</button></form>
-      <p class="help" style="margin-top:12px">${SR ? 'Voice works while this screen is open.' : 'For voice, tap the microphone key on the iPad keyboard.'} ${H.live ? 'Device questions go to Home Assistant Assist.' : 'Connect Home Assistant for full device control by voice.'}</p>`;
+      <form class="ask-row" data-form="ask"><button type="button" class="mic" id="mic" data-act="mic" aria-label="Speak" aria-pressed="false" ${ASSIST.busy ? 'disabled' : ''}>${icon('mic')}</button><input id="ask-input" placeholder="Type or tap the mic" autocomplete="off" enterkeyhint="send" ${ASSIST.busy ? 'disabled' : ''}><button type="submit" class="send" aria-label="Send" ${ASSIST.busy ? 'disabled' : ''}>${icon('send')}</button></form>
+      <p class="help" style="margin-top:12px">${SR ? 'Voice works while this screen is open.' : 'For voice, tap the microphone key on the iPad keyboard.'} ${H.live ? 'Device questions go to Home Assistant Assist.' : 'Connect Home Assistant for full device control by voice.'} Each request starts with a fresh AI conversation.</p>`;
   }
   function renderAssistChat() {
     if (APP.name !== 'assist') return;
     const c = $('#chat');
     if (c) c.innerHTML = chatHTML();
+    ['mic', 'ask-input'].forEach((id) => { const el = $('#' + id); if (el) el.disabled = ASSIST.busy; });
+    const send = $('.ask-row .send');
+    if (send) send.disabled = ASSIST.busy;
     const sb = $('.sheet-body');
-    if (sb) sb.scrollTop = sb.scrollHeight;
+    if (sb && ASSIST.log.length) sb.scrollTop = 0;
   }
 
   // ---- Settings
@@ -3427,6 +3489,12 @@
     'emc-del': (el) => { EMERG.contacts = EMERG.contacts.filter((c) => c.id !== el.dataset.id); saveEmerg(); renderApp(); },
     'smoke-tested': () => { EMERG.smokeTested = isoDay(0); saveEmerg(); renderAll(); if (APP.name === 'emergency') renderApp(); toast('Smoke alarm test logged. The next one is due in a month.'); },
     'ask-example': (el) => assist(el.dataset.q),
+    'ask-category': (el) => {
+      if (!ASSIST_PRESETS[el.dataset.category]) return;
+      ASSIST.category = el.dataset.category;
+      renderAssistChat();
+    },
+    'ask-reset': () => { if (!ASSIST.busy) { resetAssistant(); renderAssistChat(); } },
     mic: () => { ensureAudio(); listen(); },
     's-tab': (el) => { APP.stab = el.dataset.tab; APP.confirm = null; renderApp(); },
     'layout-key': (el) => { APP.layoutKey = el.dataset.key; renderApp(); },
