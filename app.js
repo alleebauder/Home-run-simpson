@@ -2399,7 +2399,7 @@
 
   const DOCK_LABELS = { board: 'Board' };
   function renderDock() {
-    $('#dock').innerHTML = DOCK.filter((a) => privateOK() || !PRIVATE_APPS.includes(a)).map((a) => `<button type="button" class="appbtn" data-act="open" data-app="${a}" aria-label="${esc(APP_TITLES[a])}" ${APP.name === a ? 'aria-current="page"' : ''}><span class="ico ${a}">${icon(APP_ICONS[a])}</span><span class="app-tab-label" data-act="open" data-app="${a}">${esc(DOCK_LABELS[a] || APP_TITLES[a])}</span></button>`).join('');
+    $('#dock').innerHTML = DOCK.filter((a) => privateOK() || !PRIVATE_APPS.includes(a)).map((a) => `<button type="button" class="appbtn" data-act="open" data-app="${a}" aria-label="${esc(APP_TITLES[a])}" ${APP.name === a ? 'aria-current="page"' : ''}><span class="ico ${a}">${icon(APP_ICONS[a])}</span><span class="app-tab-label">${esc(DOCK_LABELS[a] || APP_TITLES[a])}</span></button>`).join('');
   }
 
   // Rows are a third of the visible grid in landscape, so the first screen holds 12 squares.
