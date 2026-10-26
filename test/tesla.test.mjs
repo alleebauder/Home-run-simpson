@@ -89,5 +89,5 @@ test('the widget is private, on the family layout, and documented', () => {
   assert.match(readme, /Teslemetry/);
   assert.match(readme, /layout id `tesla`/);
   assert.match(readme, /climate\.<car>_climate/);
-  assert.match(sw, /bauder-home-v9/);
+  assert.match(sw, /bauder-home-v10/);
 });
