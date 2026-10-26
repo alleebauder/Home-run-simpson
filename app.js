@@ -330,7 +330,7 @@
       Array.isArray(states[id].attributes?.options));
     const slug = lightId.replace(/^light\./, '').replace(/_segment_?\d+$/, '');
     return candidates.find((id) => id.includes(slug)) ||
-      (candidates.length === 1 ? candidates[0] : '');
+      '';
   }
   /* /WLED_FNS */
 
@@ -2505,6 +2505,67 @@
       ${capped ? '<p class="help" style="margin-top:12px">Showing the first 60. Hide extra entities in Home Assistant to tidy this list.</p>' : ''}`;
   }
 
+
+  // ---- WLED: uses authenticated Home Assistant services; no direct HTTP
+  // calls to local strips from an HTTPS home-screen PWA.
+  function wledLightIds() {
+    if (!H.live) return ['light.wled_demo'];
+    const chosen = S.wled.lights.filter((id) => H.states[id] && id.startsWith('light.'));
+    if (chosen.length) return chosen;
+    return Object.values(H.states).filter(wledLooksLikeLight).map((s) => s.entity_id).slice(0, 12);
+  }
+  function wledControlCard(id) {
+    const device = H.states[id];
+    if (!device) return '';
+    const a = device.attributes || {};
+    const name = esc(a.friendly_name || id);
+    const offline = ['unknown', 'unavailable'].includes(device.state);
+    const on = device.state === 'on';
+    const locked = offline ? 'disabled' : '';
+    const pct = Math.round(clamp((Number(a.brightness) || 255) / 2.55, 1, 100));
+    const colorReady = wledColorCapable(a);
+    const effects = Array.isArray(a.effect_list) ? a.effect_list.filter((e) => typeof e === 'string') : [];
+    const preset = wledPresetMatch(id, H.states, S.wled.presets[id]);
+    const presetState = H.states[preset];
+    const options = Array.isArray(presetState?.attributes?.options) ? presetState.attributes.options : [];
+    return `<section class="wled-card" aria-label="${name}">
+      <div class="wled-card-head">
+        <span class="wled-indicator${on ? ' is-on' : ''}"></span>
+        <div class="wled-card-name"><strong>${name}</strong><span>${offline ? 'Unavailable in Home Assistant' : on ? 'On · ' + pct + '% brightness' : 'Off'}${!H.live ? ' · Sample' : ''}</span></div>
+        <button type="button" class="wled-power${on ? ' is-on' : ''}" data-act="wled-power" data-entity="${esc(id)}" aria-label="${on ? 'Turn off' : 'Turn on'} ${name}" aria-pressed="${on}" ${locked}>${on ? 'Turn off' : 'Turn on'}</button>
+      </div>
+      <div class="wled-card-body">
+        <label class="wled-field"><span>Brightness <b>${pct}%</b></span><input type="range" min="1" max="100" value="${pct}" data-wled-bright="${esc(id)}" aria-label="${name} brightness" ${locked}></label>
+        ${colorReady ? `<fieldset class="wled-field"><legend>Color</legend><div class="wled-colors">${WLED_COLORS.map(([label, hex]) => `<button type="button" class="wled-swatch" title="${esc(label)}" style="--swatch:${hex}" data-act="wled-color" data-entity="${esc(id)}" data-color="${hex}" aria-label="${esc(label)} for ${name}" ${locked}></button>`).join('')}</div></fieldset>` : '<p class="help">This device does not expose RGB color control.</p>'}
+        ${effects.length ? `<label class="wled-field"><span>Effect</span><select class="wled-select" data-wled-effect="${esc(id)}" aria-label="${name} effect" ${locked}><option value="">Choose an effect</option>${effects.map((effect) => `<option value="${esc(effect)}" ${a.effect === effect ? 'selected' : ''}>${esc(effect)}</option>`).join('')}</select></label>` : ''}
+        ${options.length ? `<label class="wled-field"><span>Saved WLED preset</span><select class="wled-select" data-wled-preset="${esc(id)}" aria-label="${name} preset" ${locked}><option value="">Choose a preset</option>${options.filter((p) => typeof p === 'string').map((p) => `<option value="${esc(p)}" ${presetState.state === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>` : '<p class="help">Optional: map a WLED preset entity in Configure strips to access saved presets.</p>'}
+      </div>
+    </section>`;
+  }
+  function wledSettings() {
+    const lights = Object.keys(H.states).filter((id) => id.startsWith('light.') && !H.hidden.has(id));
+    const presets = Object.keys(H.states).filter((id) => id.startsWith('select.') &&
+      /preset/i.test(id + ' ' + (H.states[id]?.attributes?.friendly_name || '')) &&
+      Array.isArray(H.states[id]?.attributes?.options));
+    return `<section class="wled-setup" aria-label="Configure LED strips"><h2>Choose your WLED strips</h2>
+      <p class="help">In Home Assistant, open Settings → Devices & services → Add integration → WLED. Then choose the light entities for each strip or segment below. Changes save on this iPad.</p>
+      ${H.live ? (lights.length ? `<div class="wled-choose">${lights.map((id) => `<label class="check"><input type="checkbox" data-wled-light="${esc(id)}" ${S.wled.lights.includes(id) ? 'checked' : ''}><span>${esc(entityName(id))}</span></label>`).join('')}</div>` : '<p class="help">No light entities reported by Home Assistant.</p>') : '<p class="help">Connect Home Assistant in Settings → Connections to choose your real strips. The example strip is only a preview.</p>'}
+      ${H.live ? S.wled.lights.filter((id) => H.states[id]).map((id) => `<label class="wled-field"><span>Preset entity for ${esc(entityName(id))}</span><select class="wled-select" data-wled-map="${esc(id)}"><option value="">Auto-detect</option>${presets.map((p) => `<option value="${esc(p)}" ${S.wled.presets[id] === p ? 'selected' : ''}>${esc(entityName(p))}</option>`).join('')}</select></label>`).join('') : ''}
+    </section>`;
+  }
+  function appWled() {
+    const ids = wledLightIds();
+    return `<div class="wled-intro">
+      <div><strong>LED Strips</strong><p>Power, dimming, color, effects and saved presets through Home Assistant.</p></div>
+      <button type="button" class="qbtn" data-act="wled-setup" aria-expanded="${APP.wledSetup}">${APP.wledSetup ? 'Done configuring' : 'Configure strips'}</button>
+    </div>
+    ${!H.live ? '<p class="wled-note">Sample preview only. Connect Home Assistant to control real WLED lights.</p>' : ''}
+    ${ids.length ? `<div class="wled-grid">${ids.map(wledControlCard).join('')}</div>` :
+      '<div class="empty">No WLED lights found. Tap Configure strips to select the light entities exposed by the Home Assistant WLED integration.</div>'}
+    ${APP.wledSetup ? wledSettings() : ''}
+    <p class="help">WLED 0.14+ is required for the Home Assistant integration. Strips with multiple segments can expose each segment as a separate light. Effects and presets are shown only when provided by your devices.</p>`;
+  }
+
   // ---- Calendar
   function personChips() {
     const owners = Array.from(new Set(CAL.events.map((e) => calOwner(e.cal)))).filter(Boolean);
@@ -3126,7 +3187,7 @@
       <p class="help faint">Bauder Home. Settings, lists, recipes, notes and photos are stored only on this device unless you chose Home Assistant lists.</p>`;
   }
 
-  const APPS = { home: appHome, cal: appCal, tasks: appTasks, airbnb: appAirbnb, kitchen: appKitchen, music: appMusic, security: appSecurity, board: appBoard, packages: appPackages, energy: appEnergy, photos: appPhotos, emergency: appEmergency, settings: appSettings, assist: appAssist };
+  const APPS = { home: appHome, wled: appWled, cal: appCal, tasks: appTasks, airbnb: appAirbnb, kitchen: appKitchen, music: appMusic, security: appSecurity, board: appBoard, packages: appPackages, energy: appEnergy, photos: appPhotos, emergency: appEmergency, settings: appSettings, assist: appAssist };
 
   // ============================================================ idle faces
   const FACES = ['bold', 'analog', 'photos', 'glance'];
