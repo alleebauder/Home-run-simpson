@@ -2133,6 +2133,22 @@
     if (!link && /[<>]/.test(raw)) return null;
     return { media_id: link || raw, media_type: link && link.includes('/playlist?') ? 'playlist' : mediaType, enqueue: 'play' };
   }
+  function youtubeInlineEmbed(raw) {
+    const valid = youtubeMusicUrl(raw);
+    if (!valid) return '';
+    const url = new URL(valid);
+    if (url.pathname === '/playlist') {
+      const id = url.searchParams.get('list');
+      return 'https://www.youtube.com/embed?listType=playlist&list=' + encodeURIComponent(id) + '&playsinline=1&controls=1';
+    }
+    if (url.pathname === '/watch') {
+      const video = url.searchParams.get('v');
+      const playlist = url.searchParams.get('list');
+      return 'https://www.youtube.com/embed/' + encodeURIComponent(video) +
+        '?playsinline=1&controls=1' + (playlist ? '&list=' + encodeURIComponent(playlist) : '');
+    }
+    return '';
+  }
   /* /YOUTUBE_MUSIC_FNS */
 
   const speakerIds = () => idsOf('media_player');
@@ -2383,7 +2399,7 @@
 
   const DOCK_LABELS = { board: 'Board' };
   function renderDock() {
-    $('#dock').innerHTML = DOCK.filter((a) => privateOK() || !PRIVATE_APPS.includes(a)).map((a) => `<button type="button" class="appbtn" data-act="open" data-app="${a}" aria-label="${esc(APP_TITLES[a])}" ${APP.name === a ? 'aria-current="page"' : ''}><span class="ico ${a}">${icon(APP_ICONS[a])}</span><span>${esc(DOCK_LABELS[a] || APP_TITLES[a])}</span></button>`).join('');
+    $('#dock').innerHTML = DOCK.filter((a) => privateOK() || !PRIVATE_APPS.includes(a)).map((a) => `<button type="button" class="appbtn" data-act="open" data-app="${a}" aria-label="${esc(APP_TITLES[a])}" ${APP.name === a ? 'aria-current="page"' : ''}><span class="ico ${a}">${icon(APP_ICONS[a])}</span><span class="app-tab-label" data-act="open" data-app="${a}">${esc(DOCK_LABELS[a] || APP_TITLES[a])}</span></button>`).join('');
   }
 
   // Rows are a third of the visible grid in landscape, so the first screen holds 12 squares.
@@ -2474,6 +2490,7 @@
     if (!APP.name) return;
     const closingName = APP.name;
     if (closingName === 'assist') resetAssistant();
+    if (closingName === 'music') { YTM.embedUrl = ''; YTM.nowPlaying = ''; }
     const dialog = $('#sheet');
     APP.name = null;
     APP.recipeId = null;
@@ -2781,12 +2798,23 @@
   }
 
   // ---- Music
-  const YTM = { busy: false, text: '' };
+  const YTM = { busy: false, text: '', destination: 'ipad', embedUrl: '', nowPlaying: '' };
   function youtubeMusicPlayer() {
     const id = S.youtubeMusic.player;
     return H.live && id && H.states[id] && id.startsWith('media_player.') ? id : '';
   }
   async function youtubeMusicPlay(value, type) {
+    if (YTM.destination === 'ipad') {
+      const embed = youtubeInlineEmbed(value);
+      if (!embed) {
+        toast('Paste a valid YouTube Music song or playlist link to play on this iPad.');
+        return false;
+      }
+      YTM.embedUrl = embed;
+      YTM.nowPlaying = type === 'playlist' ? 'Playlist' : 'Video';
+      if (APP.name === 'music') renderApp();
+      return true;
+    }
     const player = youtubeMusicPlayer();
     if (!player) {
       toast('Connect Home Assistant and choose a Music Assistant speaker first.');
@@ -2810,27 +2838,51 @@
     }
     return ok;
   }
+  function refreshYoutubeSaved() {
+    if (APP.name !== 'music') return;
+    const target = $('#ytm-library');
+    if (!target) return;
+    target.innerHTML = youtubeSavedHTML();
+  }
+  function youtubeSavedHTML() {
+    const selected = youtubeMusicPlayer();
+    const isLocal = YTM.destination === 'ipad';
+    const saved = S.youtubeMusic.playlists.map((p, i) => `<div class="ytm-saved-row"><button type="button" class="ytm-saved-label-btn" data-act="ytm-play-saved" data-index="${i}" aria-label="Play ${esc(p.label)} in ${isLocal ? 'this iPad' : 'home speakers'}" ${!isLocal && (!selected || YTM.busy) ? 'disabled' : ''}>${esc(p.label)}</button><button type="button" class="qbtn sm" data-act="ytm-play-saved" data-index="${i}" ${!isLocal && (!selected || YTM.busy) ? 'disabled' : ''}>Play here</button><button type="button" class="qbtn sm" data-act="ytm-remove" data-index="${i}" aria-label="Remove ${esc(p.label)}">Remove</button></div>`).join('');
+    return '<strong>Saved playlists</strong>' + (saved || '<p class="help">Save a YouTube Music playlist link below. Tap its name to play it here.</p>');
+  }
   function youtubeMusicPanel() {
     const players = speakerIds();
     const selected = youtubeMusicPlayer();
+    const local = YTM.destination === 'ipad';
     const options = players.map((id) => `<option value="${esc(id)}" ${S.youtubeMusic.player === id ? 'selected' : ''}>${esc(entityName(id))}</option>`).join('');
-    const saved = S.youtubeMusic.playlists.map((p, i) => `<div class="ytm-saved-row"><span class="ytm-saved-label">${esc(p.label)}</span><button type="button" class="qbtn sm" data-act="ytm-play-saved" data-index="${i}" ${!selected || YTM.busy ? 'disabled' : ''}>Play</button><a href="${esc(p.url)}" rel="noopener noreferrer" target="_blank" aria-label="Open ${esc(p.label)} in YouTube Music">Open</a><button type="button" class="qbtn sm" data-act="ytm-remove" data-index="${i}" aria-label="Remove ${esc(p.label)}">Remove</button></div>`).join('');
-    return `<section class="ytm-panel" aria-label="YouTube Music through Music Assistant">
-      <div class="ytm-heading"><div><div class="section-title">YouTube Music</div><p class="help">Play tracks and playlists on home speakers through Music Assistant.</p></div><a class="qbtn ytm-open" href="https://music.youtube.com/" target="_blank" rel="noopener noreferrer">Open YouTube Music</a></div>
-      ${H.live ? '<p class="ytm-note">Home Assistant is connected. Select a Music Assistant speaker below after you have set up YouTube Music in Music Assistant.</p>' : '<p class="ytm-note">Not connected. Set up Home Assistant and Music Assistant to play on household speakers. You can still open YouTube Music in a new tab.</p>'}
-      <label class="field"><span>Music Assistant speaker</span><select id="ytm-player" data-ytm-player aria-label="Music Assistant speaker"><option value="">Choose a speaker</option>${options}</select></label>
-      <div class="ytm-search">
-        <label class="field"><span>What would you like to play?</span><input id="ytm-query" type="text" maxlength="300" placeholder="Song, artist, album, playlist name or link" autocapitalize="off" autocomplete="off"></label>
-        <label class="field"><span>Type</span><select id="ytm-type" aria-label="Music to play"><option value="track">Song</option><option value="playlist">Playlist</option><option value="album">Album</option><option value="artist">Artist</option></select></label>
-        <button type="button" class="qbtn primary" data-act="ytm-play" ${!selected || YTM.busy ? 'disabled' : ''}>${YTM.busy ? 'Sending…' : 'Play'}</button>
+    const iframe = local && YTM.embedUrl
+      ? `<div class="ytm-inline-player"><iframe id="ytm-video" title="YouTube inline music player" src="${esc(YTM.embedUrl)}" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>`
+      : '<div class="ytm-player-empty">Choose a saved playlist or paste a song/playlist link below. Playback stays on this screen.</div>';
+    return `<section class="ytm-panel" aria-label="Music player">
+      <div class="ytm-heading"><div><div class="section-title">YouTube Music</div><p class="help">Play music right here on the iPad, or send it to household speakers.</p></div></div>
+      <div class="ytm-destination" role="group" aria-label="Where to play music">
+        <button type="button" data-act="ytm-destination" data-destination="ipad" aria-pressed="${local}">This iPad</button>
+        <button type="button" data-act="ytm-destination" data-destination="speakers" aria-pressed="${!local}">Home speakers</button>
       </div>
-      <div class="ytm-library"><strong>Saved playlists</strong>${saved || '<p class="help">Save a YouTube Music playlist link below to launch it again with one tap.</p>'}</div>
+      ${local ? `<div class="ytm-local-wrap">
+        ${iframe}
+        <p class="help">Playback uses YouTube's official embedded player. Tap Play in the player if Safari blocks autoplay. Some restricted videos or private playlists cannot be embedded. Music plays through this iPad, not an external site.</p>
+      </div>` : `<div class="ytm-remote-wrap">
+        ${H.live ? '<p class="ytm-note">Select a Music Assistant speaker connected to Home Assistant.</p>' : '<p class="ytm-note">Connect Home Assistant and Music Assistant first to use household speakers.</p>'}
+        <label class="field"><span>Music Assistant speaker</span><select id="ytm-player" data-ytm-player aria-label="Music Assistant speaker"><option value="">Choose a speaker</option>${options}</select></label>
+      </div>`}
+      <div class="ytm-search">
+        <label class="field"><span>${local ? 'YouTube Music song or playlist link' : 'What would you like to play?'}</span><input id="ytm-query" type="text" maxlength="300" placeholder="${local ? 'https://music.youtube.com/playlist?list=…' : 'Song, artist, album, playlist name or link'}" autocapitalize="off" autocomplete="off"></label>
+        ${local ? '' : '<label class="field"><span>Type</span><select id="ytm-type" aria-label="Music to play"><option value="track">Song</option><option value="playlist">Playlist</option><option value="album">Album</option><option value="artist">Artist</option></select></label>'}
+        <button type="button" class="qbtn primary" data-act="ytm-play" ${(!local && (!selected || YTM.busy)) ? 'disabled' : ''}>${YTM.busy ? 'Sending…' : local ? 'Play on iPad' : 'Play on speakers'}</button>
+      </div>
+      <div class="ytm-library" id="ytm-library">${youtubeSavedHTML()}</div>
       <div class="ytm-add">
         <label class="field"><span>Playlist name</span><input id="ytm-label" maxlength="64" placeholder="Family favorites"></label>
         <label class="field"><span>YouTube Music playlist URL</span><input id="ytm-url" maxlength="500" type="url" placeholder="https://music.youtube.com/playlist?list=…"></label>
         <button type="button" class="qbtn" data-act="ytm-add" ${S.youtubeMusic.playlists.length >= 12 ? 'disabled' : ''}>Save playlist</button>
       </div>
-      <p class="help">Requires Music Assistant with YouTube Music configured. A YouTube Music Premium account is needed for the community provider. Selecting a speaker alone does not connect your YouTube account. Playing through an external YouTube Music tab is separate from home speaker playback.</p>
+      <p class="help">On this iPad: YouTube's official inline player accepts public or embeddable YouTube Music links; no YouTube account login or library search is available in Bauder Home. Home speakers: Music Assistant with YouTube Music configured is required to play songs by name.</p>
     </section>`;
   }
   function appMusic() {
@@ -3428,7 +3480,7 @@
     renderModes();
     renderDock();
     renderHome();
-    if (APP.name && LIVE_APPS.includes(APP.name) && !dragging) renderApp();
+    if (APP.name && LIVE_APPS.includes(APP.name) && !dragging && !(APP.name === 'music' && YTM.embedUrl && YTM.destination === 'ipad')) renderApp();
     if (idleOn && FACES[faceIdx] === 'glance') { const r = $('#idle .rows'); if (r) r.innerHTML = glanceRows(); }
     sizeGrid();
   }
@@ -3714,6 +3766,15 @@
     },
     step: (el) => { APP.step += +el.dataset.dir; renderApp(); },
     media: (el) => call('media_player', { play: 'media_play_pause', next: 'media_next_track', prev: 'media_previous_track' }[el.dataset.cmd], el.dataset.entity),
+    'ytm-destination': (el) => {
+      if (APP.name !== 'music') return;
+      const next = el.dataset.destination;
+      if (!['ipad', 'speakers'].includes(next) || next === YTM.destination) return;
+      YTM.destination = next;
+      YTM.embedUrl = '';
+      YTM.nowPlaying = '';
+      renderApp();
+    },
     'ytm-play': () => {
       if (APP.name !== 'music') return;
       youtubeMusicPlay($('#ytm-query')?.value || '', $('#ytm-type')?.value || 'track');
@@ -3732,7 +3793,7 @@
       }
       S.youtubeMusic.playlists.push({ label, url });
       saveSettings();
-      renderApp();
+      refreshYoutubeSaved();
       toast('Playlist saved on this iPad.');
     },
     'ytm-remove': (el) => {
@@ -3741,7 +3802,7 @@
       if (!Number.isInteger(index) || index < 0 || index >= S.youtubeMusic.playlists.length) return;
       S.youtubeMusic.playlists.splice(index, 1);
       saveSettings();
-      renderApp();
+      refreshYoutubeSaved();
     },
     'ytm-play-saved': (el) => {
       if (APP.name !== 'music') return;
