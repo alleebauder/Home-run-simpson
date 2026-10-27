@@ -92,7 +92,7 @@ test('the library is loaded and cached with the app shell', () => {
   const nginx = read('umbrel/nginx.conf');
   const app = read('app.js');
   assert.match(html, /recipes-library\.js" defer><\/script>\s*<script src="app\.js" defer>/);
-  assert.match(sw, /bauder-home-v15/);
+  assert.match(sw, /bauder-home-v16/);
   assert.match(sw, /\.\/recipes-library\.js/);
   assert.match(docker, /recipes-library\.js/);
   assert.match(nginx, /location = \/recipes-library\.js/);

@@ -374,6 +374,7 @@
     ],
     profile: 'p1',
     pin: '',
+    pinAll: true,
     layout: clone(DEFAULT_LAYOUT),
     modes: clone(DEFAULT_MODES),
     lastMode: null,
@@ -2455,8 +2456,8 @@
     }
     if (!privateOK()) {
       if (PRIVATE_APPS.includes(name)) { toast('That’s hidden in Guest mode. Switch profiles to open it.'); return; }
-      if (name === 'settings' && S.pin && !(await askPin('Enter PIN to open Settings'))) return;
     }
+    if (name === 'settings' && name !== APP.name && S.pin && (S.pinAll || !privateOK()) && !(await askPin('Enter PIN to open Settings'))) return;
     if (name !== APP.name) { APP.confirm = null; selectedPhotos.clear(); APP.emEdit = false; }
     if (name !== 'kitchen') { APP.recipeId = null; APP.adding = false; APP.mealEdit = null; APP.mealPath = {}; }
     const dialog = $('#sheet');
@@ -3157,12 +3158,13 @@
     const todos = idsOf('todo');
     const todoSel = (k, label) => `<label class="field"><span>${esc(label)}</span>${sel(k, [['', 'On this iPad'], ...todos.map((t) => [t, 'Home Assistant · ' + entityName(t)])], S.todo[k], 'data-todo')}</label>`;
     return `<div class="section-title">People</div>
-      <p class="help">Each person gets a color for calendars, chores and notes. Turn off “Private” for anyone who shouldn’t see calendars and work widgets.</p>
+      <p class="help">Each person gets a color for calendars, chores and notes. Turn off “Private” for kids and anyone who shouldn’t see calendars, Airbnb and work widgets. With a PIN set, those profiles can’t unlock doors, open the garage or switch to a private profile without it.</p>
       <div class="panel" style="padding-block:4px">${S.people.map((p) => `<div class="person-row"><input class="inline-input" id="pn-${p.id}" data-person-name="${p.id}" value="${esc(p.name)}" aria-label="Name" ${p.fixed ? 'disabled' : ''}><select class="inline-input" id="pc-${p.id}" data-person-color="${p.id}" aria-label="Color" style="border-left:6px solid ${p.color}">${PALETTE.concat(p.fixed ? [['#9aa6a1', 'Gray']] : []).map(([c, n]) => `<option value="${c}" ${c === p.color ? 'selected' : ''}>${n}</option>`).join('')}</select>
         <label class="check"><input type="checkbox" data-person-private="${p.id}" ${p.showPrivate ? 'checked' : ''} ${p.fixed ? 'disabled' : ''}><span>Private</span></label>${p.fixed || members().length < 2 ? '<span></span>' : `<button type="button" class="icon-btn" data-act="person-del" data-id="${p.id}" aria-label="Remove ${esc(p.name)}">${icon('x')}</button>`}</div>`).join('')}</div>
       <div class="quick"><button type="button" class="qbtn" data-act="person-add">${icon('plus')} Add person</button></div>
       <div class="section-title">Guest protection</div>
       <div class="row2"><label class="field"><span>PIN to leave Guest, open Settings or unlock</span><input type="password" id="s-pin" inputmode="numeric" pattern="[0-9]*" maxlength="8" value="" placeholder="${S.pin ? 'PIN is set. Type a new one to change it' : '4 to 8 digits'}" autocomplete="off"></label><div class="quick"><button type="button" class="qbtn primary" data-act="pin-save">Save PIN</button>${S.pin ? '<button type="button" class="qbtn" data-act="pin-clear">Remove PIN</button>' : ''}</div></div>
+      <label class="check"><input type="checkbox" id="s-pinAll" data-set="pinAll" ${S.pinAll ? 'checked' : ''}><span>Ask for the PIN to open Settings on every profile, not just Guest</span></label>
       <label class="check"><input type="checkbox" id="s-guestOnIdle" data-set="guestOnIdle" ${S.guestOnIdle ? 'checked' : ''}><span>Switch to Guest whenever the clock face appears</span></label>
       <p class="help">The PIN is a household lock to keep guests out of private screens. It isn’t bank-grade security.</p>
       <div class="section-title">Calendars</div>
